@@ -368,7 +368,7 @@ function isPaymentConfirmed(payload) {
 }
 
 // ── Main handler ───────────────────────────────────────────────────────────────
-async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
 
@@ -594,5 +594,4 @@ async function handler(req, res) {
   }
 }
 
-module.exports = handler;
 
