@@ -23,14 +23,13 @@ const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const SECRET      = process.env.WEBHOOK_SECRET;
 
-// ── Vercel config: MUST disable body parser to access raw bytes for HMAC ──────
-// If bodyParser is enabled (default), req loses the original byte stream and
-// HMAC verification becomes impossible.
 const config = {
   api: {
     bodyParser: false,
   },
 };
+
+module.exports.config = config;
 
 // ── Raw body reader ────────────────────────────────────────────────────────────
 // Reads the request stream into a Buffer, respecting a 1 MB size limit.
@@ -596,5 +595,6 @@ async function handler(req, res) {
   return res.status(200).json({ received: true, processed: true, order_id: orderId });
 }
 
+handler.config = config;
 module.exports = handler;
 
