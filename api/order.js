@@ -308,39 +308,32 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    if (!order) {
-      if (req.query.create === '1' || req.query.email || req.query.to) {
-        const custEmail = (req.query.to || req.query.email || '').trim();
-        const custName = (req.query.name || 'Customer').trim();
-        const now = new Date().toISOString();
-        order = {
-          order_id: orderId,
-          customer_name: custName,
-          customer_email: custEmail,
-          customer_phone: '',
-          product_id: 'dm-fwyyaoohee',
-          product_name: 'Hisense 14kg Top Loader Washing Machine',
-          product_price: 999,
-          currency: 'ZAR',
-          product_image: 'https://www.takealot-promo.online/images/hisense-wm.jpg',
-          received_date: now,
-          delivery_date: new Date(Date.now() + 7 * 86400000).toISOString(),
-          tracking_url: 'https://www.takealot-promo.online/track.html?order=' + encodeURIComponent(orderId),
-          status: 'PROCESSING',
-          status_history: [
-            { status: 'RECEIVED', timestamp: now },
-            { status: 'PAID', timestamp: now },
-            { status: 'PROCESSING', timestamp: now },
-          ],
-          email_status: 'PENDING',
-          email_sent_at: null,
-          created_at: now,
-        };
-        if (REDIS_URL && REDIS_TOKEN) {
-          try { await kv_set('order:' + orderId, order); } catch (_) {}
-        }
-      } else {
-        return res.status(404).json({ error: 'Order not found', order_id: orderId });
+      const now = new Date().toISOString();
+      order = {
+        order_id: orderId,
+        customer_name: (req.query.name || 'Customer').trim(),
+        customer_email: (req.query.to || req.query.email || '').trim(),
+        customer_phone: '',
+        product_id: 'dm-696tgkf59s',
+        product_name: 'Hisense 14kg Top Loader Washing Machine',
+        product_price: 999,
+        currency: 'ZAR',
+        product_image: 'https://takealotpromos-black.vercel.app/produto.png',
+        received_date: now,
+        delivery_date: new Date(Date.now() + 7 * 86400000).toISOString(),
+        tracking_url: 'https://takealotpromos-black.vercel.app/track.html?order=' + encodeURIComponent(orderId),
+        status: 'PROCESSING',
+        status_history: [
+          { status: 'RECEIVED', timestamp: now },
+          { status: 'PAID', timestamp: now },
+          { status: 'PROCESSING', timestamp: now },
+        ],
+        email_status: 'PENDING',
+        email_sent_at: null,
+        created_at: now,
+      };
+      if (REDIS_URL && REDIS_TOKEN) {
+        try { await kv_set('order:' + orderId, order); } catch (_) {}
       }
     }
   }

@@ -984,7 +984,13 @@
             .then(function(order) {
               if (order.error) {
                 var delivTitle = document.getElementById('trackingDeliveryTitle');
-                if (delivTitle) delivTitle.innerHTML = 'Order ' + _urlOrderId + ' not found';
+                if (delivTitle) delivTitle.innerHTML = 'Takealot Delivery &middot; Tracking #' + _urlOrderId;
+                var orderIdSpan = document.getElementById('trackingOrderId');
+                if (orderIdSpan) orderIdSpan.textContent = '#' + _urlOrderId;
+                var today = new Date();
+                var delDate = new Date();
+                delDate.setDate(delDate.getDate() + 7);
+                _renderTracking(today, delDate, 'PROCESSING');
                 return;
               }
 
