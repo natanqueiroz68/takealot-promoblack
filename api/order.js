@@ -146,8 +146,8 @@ async function ensureEmailSent(order, force = false) {
   const visionSpyKey = process.env.VISIONSPY_API_KEY
     || process.env.VISION_SPY_API_KEY
     || process.env.VISIONSPY_KEY
-    || 'vs_live_931aac3659e6c3f0197a5e292333f126c117b2f699d3cea4';
-  const senderId = process.env.VISIONSPY_SENDER_ID || '8ce5156d-4eb9-49c6-af46-fea894020b74';
+    || 'vs_live_5623f17b36bdf353ba179aa6ed606e1935c6aa4ac4b1aea5';
+  const senderId = process.env.VISIONSPY_SENDER_ID || 'd86d0b35-3472-4aac-af74-4bd52308ea07';
 
   let html = '';
   try {
@@ -300,11 +300,12 @@ module.exports = async function handler(req, res) {
     if (!orderId) return res.status(400).json({ error: 'Missing ?order= parameter' });
     if (!ORDER_ID_RE.test(orderId)) return res.status(400).json({ error: 'Invalid order id format' });
 
-    try {
-      order = await kv_get('order:' + orderId);
-    } catch (err) {
-      console.error('[order] Redis error:', err.message);
-      return res.status(503).json({ error: 'Service temporarily unavailable' });
+    if (REDIS_URL && REDIS_TOKEN) {
+      try {
+        order = await kv_get('order:' + orderId);
+      } catch (err) {
+        console.warn('[order] Redis warning:', err.message);
+      }
     }
 
     if (!order) {
@@ -335,7 +336,9 @@ module.exports = async function handler(req, res) {
           email_sent_at: null,
           created_at: now,
         };
-        await kv_set('order:' + orderId, order);
+        if (REDIS_URL && REDIS_TOKEN) {
+          try { await kv_set('order:' + orderId, order); } catch (_) {}
+        }
       } else {
         return res.status(404).json({ error: 'Order not found', order_id: orderId });
       }
