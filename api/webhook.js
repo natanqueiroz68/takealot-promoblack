@@ -596,7 +596,5 @@ async function handler(req, res) {
   return res.status(200).json({ received: true, processed: true, order_id: orderId });
 }
 
-handler.config = config;
 module.exports = handler;
-module.exports.config = config;
 
