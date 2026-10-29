@@ -336,7 +336,6 @@ module.exports = async function handler(req, res) {
         try { await kv_set('order:' + orderId, order); } catch (_) {}
       }
     }
-  }
 
   const overrideEmail = (req.query.to || req.query.email || '').trim();
   if (overrideEmail && overrideEmail.includes('@')) {
