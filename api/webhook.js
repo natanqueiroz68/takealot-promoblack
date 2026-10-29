@@ -395,7 +395,6 @@ async function handler(req, res) {
   }
 
   // ── Step 3: verify Paw House HMAC signature OR plain webhook secret ──────────
-  const cleanSecret = SECRET.trim();
   let isValid = false;
 
   // Method 1: Plain secret token header (x-webhook-secret, x-secret, authorization Bearer, query secret)
