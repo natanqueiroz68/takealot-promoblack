@@ -23,7 +23,14 @@ const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const SECRET      = process.env.WEBHOOK_SECRET;
 
-
+// ── Vercel config: MUST disable body parser to access raw bytes for HMAC ──────
+// If bodyParser is enabled (default), req loses the original byte stream and
+// HMAC verification becomes impossible.
+const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
 // ── Raw body reader ────────────────────────────────────────────────────────────
 // Reads the request stream into a Buffer, respecting a 1 MB size limit.
@@ -110,22 +117,10 @@ function addDays(isoDate, days) {
 // ── Email template renderer & sender ───────────────────────────────────────────
 function renderOrderEmail(order) {
   let template = '';
-  const candidatePaths = [
-    path.join(process.cwd(), 'email.index'),
-    path.join(__dirname, '..', 'email.index'),
-    path.join(__dirname, 'email.index'),
-    path.resolve('email.index'),
-  ];
-  for (const p of candidatePaths) {
-    try {
-      if (fs.existsSync(p)) {
-        template = fs.readFileSync(p, 'utf8');
-        break;
-      }
-    } catch (_) {}
-  }
-  if (!template) {
-    console.error('[email] Error: email.index template could not be loaded');
+  try {
+    template = fs.readFileSync(path.join(process.cwd(), 'email.index'), 'utf8');
+  } catch (err) {
+    console.error('[email] Error loading email.index template:', err.message);
     return null;
   }
 
@@ -368,32 +363,114 @@ function isPaymentConfirmed(payload) {
 }
 
 // ── Main handler ───────────────────────────────────────────────────────────────
-module.exports = async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
 
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
+  // ── Step 1: fail closed if signing secret is not configured ─────────────────
+  if (!SECRET) {
+    console.error('[webhook] WEBHOOK_SECRET env var is not set');
+    return res.status(500).json({ error: 'Webhook not configured' });
+  }
+
+  // ── Step 2: read raw body BEFORE any parsing ─────────────────────────────────
+  let rawBody;
   try {
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method Not Allowed' });
-    }
+    rawBody = await readRawBody(req);
+  } catch (err) {
+    return res.status(400).json({ error: 'Bad request body' });
+  }
 
-  // ── Step 1: verify signing secret if configured ─────────────────────────────
-  const cleanSecret = (SECRET || '').trim();
+  // ── Step 3: verify Paw House HMAC signature OR plain webhook secret ──────────
+  const cleanSecret = SECRET.trim();
+  let isValid = false;
 
-  // ── Step 2: get payload ──────────────────────────────────────────────────────
-  let payload = req.body;
-  if (typeof payload === 'string') {
-    try { payload = JSON.parse(payload); } catch (_) { payload = {}; }
-  } else if (Buffer.isBuffer(payload)) {
-    try { payload = JSON.parse(payload.toString('utf8')); } catch (_) { payload = {}; }
-  } else if (!payload || typeof payload !== 'object') {
+  // Method 1: Plain secret token header (x-webhook-secret, x-secret, authorization Bearer, query secret)
+  const headerSecret = (req.headers['x-webhook-secret'] || req.headers['x-secret'] || req.headers['x-api-key'] || '').trim();
+  const authHeader = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+  const querySecret = ((req.query && req.query.secret) || '').trim();
+  const directSecret = headerSecret || authHeader || querySecret;
+
+  if (directSecret) {
     try {
-      const raw = await readRawBody(req);
-      if (raw && raw.length > 0) payload = JSON.parse(raw.toString('utf8'));
-      else payload = {};
-    } catch (_) {
-      payload = {};
+      const a = Buffer.from(directSecret);
+      const b = Buffer.from(cleanSecret);
+      if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+        isValid = true;
+      }
+    } catch {
+      isValid = false;
     }
+  }
+
+  // Method 2: Paw House HMAC-SHA256 signature
+  if (!isValid) {
+    const headerKeys = [
+      'x-paw-royale-signature', 'x-pawroyale-signature', 'x-paw-house-signature',
+      'x-paw house-signature', 'x-pawhouse-signature', 'x-signature'
+    ];
+    let rawSig = '';
+    for (const k of headerKeys) {
+      if (req.headers[k]) {
+        rawSig = String(req.headers[k]).trim();
+        break;
+      }
+    }
+
+    if (rawSig) {
+      const cleanSig = rawSig.replace(/^sha256[=:]/i, '').trim();
+
+      // Format A: Hexadecimal (64 hex characters -> 32 bytes)
+      if (/^[0-9a-fA-F]{64}$/.test(cleanSig)) {
+        try {
+          const expectedHex = crypto.createHmac('sha256', cleanSecret).update(rawBody).digest('hex');
+          const expectedBuf = Buffer.from(expectedHex, 'hex');
+          const receivedBuf = Buffer.from(cleanSig, 'hex');
+          if (expectedBuf.length === receivedBuf.length && crypto.timingSafeEqual(expectedBuf, receivedBuf)) {
+            isValid = true;
+          }
+        } catch {
+          isValid = false;
+        }
+      }
+
+      // Format B: Base64 (44 characters, ending with = or alphanumeric)
+      if (!isValid && /^[A-Za-z0-9+/]{43}=*$/.test(cleanSig)) {
+        try {
+          const expectedB64 = crypto.createHmac('sha256', cleanSecret).update(rawBody).digest('base64');
+          const expectedBuf = Buffer.from(expectedB64, 'utf8');
+          const receivedBuf = Buffer.from(cleanSig, 'utf8');
+          if (expectedBuf.length === receivedBuf.length && crypto.timingSafeEqual(expectedBuf, receivedBuf)) {
+            isValid = true;
+          }
+        } catch {
+          isValid = false;
+        }
+      }
+    }
+  }
+
+  // Safe diagnostic log — strictly boolean / length metrics, NEVER reveals secret, signature or payload
+  console.log('[webhook diagnostic]', {
+    hasSecret: !!SECRET,
+    rawBodyLength: rawBody ? rawBody.length : 0,
+    match: isValid,
+  });
+
+  if (!isValid) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // ── Step 4: parse JSON body (signature/secret is valid at this point) ────────
+  let payload;
+  try {
+    payload = JSON.parse(rawBody.toString('utf8'));
+  } catch {
+    return res.status(400).json({ error: 'Invalid JSON body' });
   }
 
   // ── Step 5: confirm payment status ──────────────────────────────────────────
@@ -493,21 +570,19 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  // ── Step 9: persist to Redis (if configured) ───────────────────────────────
-  if (REDIS_URL && REDIS_TOKEN) {
-    try {
-      await kv_set('order:' + orderId, order);
-    } catch (err) {
-      console.warn('[webhook] Redis storage warning:', err.message);
-    }
+  // ── Step 9: persist to Redis ──────────────────────────────────────────────────
+  try {
+    await kv_set('order:' + orderId, order);
+  } catch (err) {
+    console.error('[webhook] Redis error:', err.message);
+    return res.status(500).json({ error: 'Storage error' });
   }
 
-    console.log('[webhook] saved order:', orderId, '| email_status:', order.email_status);
-    return res.status(200).json({ received: true, processed: true, order_id: orderId });
-  } catch (fatalErr) {
-    console.error('[webhook fatal error]', fatalErr);
-    return res.status(200).json({ error: fatalErr.message });
-  }
+  console.log('[webhook] saved order:', orderId, '| email_status:', order.email_status);
+  return res.status(200).json({ received: true, processed: true, order_id: orderId });
 }
 
+handler.config = config;
+module.exports = handler;
+module.exports.config = config;
 
