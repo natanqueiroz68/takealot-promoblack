@@ -559,7 +559,7 @@
   <script>
     function getOrderId() {
       const params = new URLSearchParams(window.location.search);
-      return (params.get('order') || params.get('orderId') || params.get('id') || '').trim();
+      return (params.get('order') || params.get('order_id') || params.get('orderId') || params.get('id') || '').trim();
     }
 
     (function initSucesso() {
