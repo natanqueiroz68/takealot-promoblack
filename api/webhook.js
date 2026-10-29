@@ -378,9 +378,10 @@ async function handler(req, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
+  try {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method Not Allowed' });
+    }
 
   // ── Step 1: verify signing secret if configured ─────────────────────────────
   const cleanSecret = (SECRET || '').trim();
@@ -591,10 +592,13 @@ async function handler(req, res) {
     }
   }
 
-  console.log('[webhook] saved order:', orderId, '| email_status:', order.email_status);
-  return res.status(200).json({ received: true, processed: true, order_id: orderId });
+    console.log('[webhook] saved order:', orderId, '| email_status:', order.email_status);
+    return res.status(200).json({ received: true, processed: true, order_id: orderId });
+  } catch (fatalErr) {
+    console.error('[webhook fatal error]', fatalErr);
+    return res.status(200).json({ error: fatalErr.message });
+  }
 }
 
-handler.config = config;
 module.exports = handler;
 
