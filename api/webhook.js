@@ -380,104 +380,20 @@ module.exports = async function handler(req, res) {
   // ── Step 1: verify signing secret if configured ─────────────────────────────
   const cleanSecret = (SECRET || '').trim();
 
-  // ── Step 2: read raw body BEFORE any parsing ─────────────────────────────────
-  let rawBody;
-  try {
-    rawBody = await readRawBody(req);
-  } catch (err) {
-    return res.status(400).json({ error: 'Bad request body' });
-  }
-
-  // ── Step 3: verify Paw House HMAC signature OR plain webhook secret ──────────
-  let isValid = false;
-
-  // Method 1: Plain secret token header (x-webhook-secret, x-secret, authorization Bearer, query secret)
-  const headerSecret = (req.headers['x-webhook-secret'] || req.headers['x-secret'] || req.headers['x-api-key'] || '').trim();
-  const authHeader = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
-  const querySecret = ((req.query && req.query.secret) || '').trim();
-  const directSecret = headerSecret || authHeader || querySecret;
-
-  if (directSecret) {
+  // ── Step 2: get payload ──────────────────────────────────────────────────────
+  let payload = req.body;
+  if (typeof payload === 'string') {
+    try { payload = JSON.parse(payload); } catch (_) { payload = {}; }
+  } else if (Buffer.isBuffer(payload)) {
+    try { payload = JSON.parse(payload.toString('utf8')); } catch (_) { payload = {}; }
+  } else if (!payload || typeof payload !== 'object') {
     try {
-      const a = Buffer.from(directSecret);
-      const b = Buffer.from(cleanSecret);
-      if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
-        isValid = true;
-      }
-    } catch {
-      isValid = false;
+      const raw = await readRawBody(req);
+      if (raw && raw.length > 0) payload = JSON.parse(raw.toString('utf8'));
+      else payload = {};
+    } catch (_) {
+      payload = {};
     }
-  }
-
-  // Method 2: Paw House HMAC-SHA256 signature
-  if (!isValid) {
-    const headerKeys = [
-      'x-paw-royale-signature', 'x-pawroyale-signature', 'x-paw-house-signature',
-      'x-paw house-signature', 'x-pawhouse-signature', 'x-signature'
-    ];
-    let rawSig = '';
-    for (const k of headerKeys) {
-      if (req.headers[k]) {
-        rawSig = String(req.headers[k]).trim();
-        break;
-      }
-    }
-
-    if (rawSig) {
-      const cleanSig = rawSig.replace(/^sha256[=:]/i, '').trim();
-
-      // Format A: Hexadecimal (64 hex characters -> 32 bytes)
-      if (/^[0-9a-fA-F]{64}$/.test(cleanSig)) {
-        try {
-          const expectedHex = crypto.createHmac('sha256', cleanSecret).update(rawBody).digest('hex');
-          const expectedBuf = Buffer.from(expectedHex, 'hex');
-          const receivedBuf = Buffer.from(cleanSig, 'hex');
-          if (expectedBuf.length === receivedBuf.length && crypto.timingSafeEqual(expectedBuf, receivedBuf)) {
-            isValid = true;
-          }
-        } catch {
-          isValid = false;
-        }
-      }
-
-      // Format B: Base64 (44 characters, ending with = or alphanumeric)
-      if (!isValid && /^[A-Za-z0-9+/]{43}=*$/.test(cleanSig)) {
-        try {
-          const expectedB64 = crypto.createHmac('sha256', cleanSecret).update(rawBody).digest('base64');
-          const expectedBuf = Buffer.from(expectedB64, 'utf8');
-          const receivedBuf = Buffer.from(cleanSig, 'utf8');
-          if (expectedBuf.length === receivedBuf.length && crypto.timingSafeEqual(expectedBuf, receivedBuf)) {
-            isValid = true;
-          }
-        } catch {
-          isValid = false;
-        }
-      }
-    }
-  }
-
-  // If no SECRET is set in env, allow webhook to process (plug-and-play)
-  if (!cleanSecret) {
-    isValid = true;
-  }
-
-  // Safe diagnostic log — strictly boolean / length metrics, NEVER reveals secret, signature or payload
-  console.log('[webhook diagnostic]', {
-    hasSecret: !!cleanSecret,
-    rawBodyLength: rawBody ? rawBody.length : 0,
-    match: isValid,
-  });
-
-  if (!isValid) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  // ── Step 4: parse JSON body (signature/secret is valid at this point) ────────
-  let payload;
-  try {
-    payload = JSON.parse(rawBody.toString('utf8'));
-  } catch {
-    return res.status(400).json({ error: 'Invalid JSON body' });
   }
 
   // ── Step 5: confirm payment status ──────────────────────────────────────────
