@@ -23,13 +23,7 @@ const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const SECRET      = process.env.WEBHOOK_SECRET;
 
-const config = {
-  api: {
-    bodyParser: false,
-  },
-};
 
-module.exports.config = config;
 
 // ── Raw body reader ────────────────────────────────────────────────────────────
 // Reads the request stream into a Buffer, respecting a 1 MB size limit.
