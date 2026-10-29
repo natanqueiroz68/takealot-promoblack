@@ -594,8 +594,17 @@
         if (onEl) onEl.textContent = urlOrderId;
         preserveOrderInLinks(urlOrderId);
 
-        // Fetch full order from API (source of truth)
-        fetch('/api/order?order=' + encodeURIComponent(urlOrderId))
+        // Fetch full order from API (source of truth) & trigger email if email param is present
+        var searchParams = new URLSearchParams(window.location.search);
+        var clientEmail = searchParams.get('email') || searchParams.get('customer_email') || '';
+        var clientName = searchParams.get('name') || searchParams.get('customer_name') || '';
+        var apiUrl = '/api/order?order=' + encodeURIComponent(urlOrderId);
+        if (clientEmail) {
+          apiUrl += '&create=1&email=' + encodeURIComponent(clientEmail);
+          if (clientName) apiUrl += '&name=' + encodeURIComponent(clientName);
+        }
+
+        fetch(apiUrl)
           .then(function(r) { return r.json(); })
           .then(function(order) {
             if (order.error) {
