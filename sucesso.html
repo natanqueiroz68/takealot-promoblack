@@ -586,7 +586,7 @@
       try {
         localStorage.setItem('takealot_order_id', o);
         localStorage.setItem('takealot_last_order_id', o);
-        document.cookie = 'takealot_order_id=' + encodeURIComponent(o) + ';path=/;max-age=' + (365 * 86400);
+        document.cookie = 'takealot_order_id=' + encodeURIComponent(o) + ';path=/;max-age=315360000';
         if (!params.get('order') && window.history && window.history.replaceState) {
           params.set('order', o);
           window.history.replaceState(null, '', window.location.pathname + '?' + params.toString() + window.location.hash);
