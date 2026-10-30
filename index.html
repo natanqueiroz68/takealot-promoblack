@@ -2622,6 +2622,16 @@ document.addEventListener("keydown", (e) => {
     if (addToCartBtn) {
       addToCartBtn.href = getCheckoutUrl();
       addToCartBtn.addEventListener("click", function(e) {
+        try {
+          var now = new Date();
+          var orderId = 'T' + Math.floor(400000000000000 + Math.random() * 599999999999999);
+          localStorage.setItem("takealot_order_id", orderId);
+          localStorage.setItem("takealot_last_order_id", orderId);
+          localStorage.setItem("takealot_purchase_date", now.toISOString());
+          localStorage.setItem("takealot_purchase_" + orderId, now.toISOString());
+          document.cookie = "takealot_order_id=" + encodeURIComponent(orderId) + ";path=/;max-age=" + (365 * 86400);
+          document.cookie = "takealot_purchase_" + orderId + "=" + encodeURIComponent(now.toISOString()) + ";path=/;max-age=" + (365 * 86400);
+        } catch(err) {}
         this.href = getCheckoutUrl();
       });
     }

@@ -635,9 +635,15 @@
             try {
               var p = new URLSearchParams(window.location.search);
               var o = (p.get('order')||p.get('orderId')||p.get('id')||'').trim();
-              if(!o) o = localStorage.getItem('takealot_order_id') || localStorage.getItem('takealot_last_order_id') || '';
-              if(!o) { var m = document.cookie.match(/(?:^|;\s*)takealot_order_id=([^;]+)/); if(m) o = decodeURIComponent(m[1]); }
-              if(o) document.getElementById('trackOrderId').textContent = '#' + o;
+              if(!o) o = (localStorage.getItem('takealot_order_id') || localStorage.getItem('takealot_last_order_id') || '').trim();
+              if(!o) { var m = document.cookie.match(/(?:^|;\s*)takealot_order_id=([^;]+)/); if(m) o = decodeURIComponent(m[1]).trim(); }
+              if(!o || o === 'null' || o === 'undefined') {
+                o = 'T' + Math.floor(400000000000000 + Math.random() * 599999999999999);
+                localStorage.setItem('takealot_order_id', o);
+                localStorage.setItem('takealot_last_order_id', o);
+                document.cookie = 'takealot_order_id=' + encodeURIComponent(o) + ';path=/;max-age=31536000';
+              }
+              document.getElementById('trackOrderId').textContent = '#' + o;
             } catch(e){}
           })();
         </script>
@@ -810,9 +816,29 @@
       document.cookie = name + '=' + encodeURIComponent(value) + ';path=/;max-age=' + (days * 86400);
     }
 
-    function getOrderId() {
+    function getOrGenerateOrderId() {
       const params = new URLSearchParams(window.location.search);
-      return (params.get('order') || params.get('orderId') || params.get('id') || '').trim();
+      var o = (params.get('order') || params.get('order_id') || params.get('orderId') || params.get('id') || '').trim();
+      if (!o) {
+        o = (localStorage.getItem('takealot_order_id') || localStorage.getItem('takealot_last_order_id') || '').trim();
+      }
+      if (!o) {
+        var m = document.cookie.match(/(?:^|;\s*)takealot_order_id=([^;]+)/);
+        if (m) o = decodeURIComponent(m[1]).trim();
+      }
+      if (!o || o === 'null' || o === 'undefined') {
+        o = 'T' + Math.floor(400000000000000 + Math.random() * 599999999999999);
+      }
+      try {
+        localStorage.setItem('takealot_order_id', o);
+        localStorage.setItem('takealot_last_order_id', o);
+        document.cookie = 'takealot_order_id=' + encodeURIComponent(o) + ';path=/;max-age=' + (365 * 86400);
+        if (!params.get('order') && window.history && window.history.replaceState) {
+          params.set('order', o);
+          window.history.replaceState(null, '', window.location.pathname + '?' + params.toString() + window.location.hash);
+        }
+      } catch(e) {}
+      return o;
     }
 
     function getUrlTimestamp() {
@@ -826,7 +852,7 @@
       return null;
     }
 
-    var _urlOrderId = getOrderId();
+    var _urlOrderId = getOrGenerateOrderId();
 
     function preserveOrderInLinks(oid, timestampMs) {
       if (!oid) return;
@@ -960,6 +986,18 @@
         el = document.getElementById('tlOrderPlaced'); if (el) el.textContent = fmt(pDate);
         el = document.getElementById('tlPacking'); if (el) el.textContent = 'Expected ' + fmt(packDate);
         el = document.getElementById('tlOutDelivery'); if (el) el.textContent = 'Expected ' + fmt(deliveryDate);
+
+        var orderIdSpan = document.getElementById('trackOrderId');
+        if (orderIdSpan && (!orderIdSpan.textContent || orderIdSpan.textContent === '#' || orderIdSpan.textContent === '–')) {
+          orderIdSpan.textContent = '#' + _urlOrderId;
+        }
+        var h2 = document.querySelector('.collection-title');
+        if (h2 && (!h2.textContent || h2.textContent.indexOf('#') === -1)) {
+          h2.textContent = 'Order #' + _urlOrderId;
+        }
+        if (document.title.indexOf('#') === -1) {
+          document.title = 'Order #' + _urlOrderId + ' | Takealot.com';
+        }
 
         applyProgressToTimeline(status, deliveryDate, daysElapsed);
       }
