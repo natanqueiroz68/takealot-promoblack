@@ -910,26 +910,48 @@
       return months[d.getMonth()] + '<br>' + d.getFullYear();
     }
 
+    function getCookie(name) {
+      var match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]+)'));
+      return match ? decodeURIComponent(match[1]) : null;
+    }
+    function setCookie(name, value, days) {
+      var d = new Date();
+      d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+      document.cookie = name + '=' + encodeURIComponent(value) + ';path=/;max-age=' + (days * 86400);
+    }
+
     function getOrderId() {
       const params = new URLSearchParams(window.location.search);
       return (params.get('order') || params.get('orderId') || params.get('id') || '').trim();
     }
 
+    function getUrlTimestamp() {
+      const params = new URLSearchParams(window.location.search);
+      var val = params.get('p') || params.get('received_date') || params.get('date');
+      if (val) {
+        var num = Number(val);
+        var d = !isNaN(num) && num > 1000000000 ? new Date(num > 10000000000 ? num : num * 1000) : new Date(val);
+        if (!isNaN(d.getTime())) return d;
+      }
+      return null;
+    }
+
     var _urlOrderId = getOrderId();
 
-    function preserveOrderInLinks(oid) {
+    function preserveOrderInLinks(oid, timestampMs) {
       if (!oid) return;
       var links = document.querySelectorAll('a[href*="sucess.html"], a[href*="tracking.html"], a[href*="track.html"]');
       for (var i = 0; i < links.length; i++) {
         try {
           var u = new URL(links[i].href, window.location.origin);
           u.searchParams.set('order', oid);
+          if (timestampMs) u.searchParams.set('p', timestampMs);
           links[i].href = u.pathname + u.search + u.hash;
         } catch(e) {}
       }
     }
 
-    function _renderTracking(purchaseDate, deliveryDate, status) {
+    function _renderTracking(purchaseDate, deliveryDate, status, daysElapsed) {
       var shipDate = new Date(purchaseDate); shipDate.setDate(shipDate.getDate() + 1);
       var el;
       el = document.getElementById('stepDatePaid');     if(el) el.textContent = fmtShortUpper(purchaseDate);
@@ -953,14 +975,14 @@
         return;
       }
 
-      // IN_TRANSIT or DELIVERED → mark ship step active
-      if ((status === 'IN_TRANSIT' || status === 'DELIVERED') && nodeShip) {
+      // Shipped active after day 1 or if in transit/delivered
+      if ((daysElapsed >= 1 || status === 'IN_TRANSIT' || status === 'DELIVERED') && nodeShip) {
         nodeShip.innerHTML = '<svg viewBox="0 0 22 22" style="width:22px;height:22px;"><circle cx="11" cy="11" r="10.5" fill="#0c77c3"/><text x="11" y="15.5" text-anchor="middle" fill="white" font-size="13" font-weight="bold">✓</text></svg>';
         if(titleShip) titleShip.textContent = 'Shipped';
       }
 
-      // DELIVERED → mark delivery step active
-      if (status === 'DELIVERED') {
+      // Delivered active after day 8 or if delivered
+      if (daysElapsed >= 8 || status === 'DELIVERED') {
         if (nodeDel) {
           nodeDel.innerHTML = '<svg viewBox="0 0 22 22" style="width:22px;height:22px;"><circle cx="11" cy="11" r="10.5" fill="#16a34a"/><text x="11" y="15.5" text-anchor="middle" fill="white" font-size="13" font-weight="bold">✓</text></svg>';
         }
@@ -976,10 +998,21 @@
 
     (function initTracking() {
       try {
-        // ---- If URL has order ID: fetch from API (source of truth) ----
+        var urlTs = getUrlTimestamp();
+        var key = _urlOrderId ? ('takealot_purchase_' + _urlOrderId) : 'takealot_purchase_date';
+        var storedStr = urlTs ? urlTs.toISOString() : (localStorage.getItem(key) || getCookie(key) || localStorage.getItem('takealot_purchase_date'));
+        var purchaseDate = storedStr ? new Date(storedStr) : null;
+        if (purchaseDate && isNaN(purchaseDate.getTime())) purchaseDate = null;
+
         if (_urlOrderId) {
-          preserveOrderInLinks(_urlOrderId);
-          fetch('/api/order?order=' + encodeURIComponent(_urlOrderId))
+          preserveOrderInLinks(_urlOrderId, purchaseDate ? purchaseDate.getTime() : null);
+
+          var apiUrl = '/api/order?order=' + encodeURIComponent(_urlOrderId);
+          if (purchaseDate) {
+            apiUrl += '&received_date=' + encodeURIComponent(purchaseDate.toISOString());
+          }
+
+          fetch(apiUrl)
             .then(function(r) { return r.json(); })
             .then(function(order) {
               if (order.error) {
@@ -987,65 +1020,54 @@
                 if (delivTitle) delivTitle.innerHTML = 'Takealot Delivery &middot; Tracking #' + _urlOrderId;
                 var orderIdSpan = document.getElementById('trackingOrderId');
                 if (orderIdSpan) orderIdSpan.textContent = '#' + _urlOrderId;
-                var today = new Date();
-                var delDate = new Date();
-                delDate.setDate(delDate.getDate() + 7);
-                _renderTracking(today, delDate, 'PROCESSING');
+                _renderWithPurchaseDate(purchaseDate || new Date(), 'PROCESSING');
                 return;
               }
 
-              // ---- Product image from API ----
               if (order.product_image) {
                 var imgEl = document.getElementById('trackingProductImg');
                 if (imgEl) { imgEl.src = order.product_image; imgEl.onerror = null; }
               }
 
-              // ---- Update page title and order number span ----
+              var finalPurchase = purchaseDate || (order.received_date ? new Date(order.received_date) : new Date());
+              if (isNaN(finalPurchase.getTime())) finalPurchase = new Date();
+
+              try {
+                localStorage.setItem(key, finalPurchase.toISOString());
+                setCookie(key, finalPurchase.toISOString(), 365);
+              } catch(_) {}
+
+              preserveOrderInLinks(order.order_id, finalPurchase.getTime());
               if (document.title) document.title = 'Tracking #' + order.order_id + ' | Takealot.com';
               var orderIdSpan = document.getElementById('trackingOrderId');
               if (orderIdSpan) orderIdSpan.textContent = '#' + order.order_id;
-              preserveOrderInLinks(order.order_id);
 
-              // ---- Render dates and status ----
-              _renderTracking(
-                new Date(order.received_date),
-                new Date(order.delivery_date),
-                order.status
-              );
+              _renderWithPurchaseDate(finalPurchase, order.status);
             })
             .catch(function(err) {
               console.error('[tracking] API error:', err);
-              _legacyTrackingFallback();
+              _renderWithPurchaseDate(purchaseDate || new Date(), 'PROCESSING');
             });
           return;
         }
 
-        // ---- No URL param: fall back to localStorage ----
-        _legacyTrackingFallback();
+        _renderWithPurchaseDate(purchaseDate || new Date(), 'PROCESSING');
 
       } catch(e) { console.error(e); }
-    })();
 
-    // Legacy path: localStorage + days-elapsed (kept for backward compatibility)
-    function _legacyTrackingFallback() {
-      try {
-                var imgEl = document.getElementById('trackingProductImg');
-        if (imgEl) imgEl.src = 'images/hisense-wm.jpg';
-
-        var stored = localStorage.getItem('takealot_purchase_date');
-        var purchaseDate = stored ? new Date(stored) : new Date();
-        if (isNaN(purchaseDate.getTime())) purchaseDate = new Date();
+      function _renderWithPurchaseDate(pDate, status) {
         var today = new Date(); today.setHours(0,0,0,0);
-        var purchaseMidnight = new Date(purchaseDate); purchaseMidnight.setHours(0,0,0,0);
-        var daysElapsed = Math.floor((today - purchaseMidnight) / 86400000);
-        var deliveryDate = new Date(purchaseDate); deliveryDate.setDate(deliveryDate.getDate() + 7);
-        // Map days elapsed to a pseudo-status
-        var pseudoStatus = 'PROCESSING';
-        if (daysElapsed >= 1) pseudoStatus = 'IN_TRANSIT';
-        if (daysElapsed >= 7) pseudoStatus = 'DELIVERED';
-        _renderTracking(purchaseDate, deliveryDate, pseudoStatus);
-      } catch(e) { console.error(e); }
-    }
+        var pMidnight = new Date(pDate); pMidnight.setHours(0,0,0,0);
+        var daysElapsed = Math.floor((today - pMidnight) / 86400000);
+        if (daysElapsed < 0) daysElapsed = 0;
+
+        // FIXED 8-day delivery window from purchase date
+        var deliveryDate = new Date(pDate);
+        deliveryDate.setDate(deliveryDate.getDate() + 8);
+
+        _renderTracking(pDate, deliveryDate, status, daysElapsed);
+      }
+    })();
   </script>
 
 </body>

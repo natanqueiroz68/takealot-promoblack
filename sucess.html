@@ -560,6 +560,16 @@
   </main>
 
   <script>
+    function getCookie(name) {
+      var match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]+)'));
+      return match ? decodeURIComponent(match[1]) : null;
+    }
+    function setCookie(name, value, days) {
+      var d = new Date();
+      d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+      document.cookie = name + '=' + encodeURIComponent(value) + ';path=/;max-age=' + (days * 86400);
+    }
+
     function getOrderId() {
       const params = new URLSearchParams(window.location.search);
       return (params.get('order') || params.get('order_id') || params.get('orderId') || params.get('id') || '').trim();
@@ -577,28 +587,40 @@
       var onEl = document.getElementById('successOrderNum');
       var trackBtn = document.getElementById('trackOrderBtn');
 
-      function preserveOrderInLinks(oid) {
+      function preserveOrderInLinks(oid, timestampMs) {
         if (!oid) return;
+        var trackUrl = 'track.html?order=' + encodeURIComponent(oid);
+        if (timestampMs) trackUrl += '&p=' + timestampMs;
         if (trackBtn) {
-          trackBtn.href = 'track.html?order=' + encodeURIComponent(oid);
+          trackBtn.href = trackUrl;
         }
         var otherLinks = document.querySelectorAll('a[data-order-link], a.track-link');
         for (var i = 0; i < otherLinks.length; i++) {
-          otherLinks[i].href = 'track.html?order=' + encodeURIComponent(oid);
+          otherLinks[i].href = trackUrl;
         }
       }
 
       var urlOrderId = getOrderId();
 
       if (urlOrderId) {
-        if (onEl) onEl.textContent = urlOrderId;
-        preserveOrderInLinks(urlOrderId);
+        var key = 'takealot_purchase_' + urlOrderId;
+        var stored = localStorage.getItem(key) || getCookie(key) || localStorage.getItem('takealot_purchase_date');
+        var purchaseDate = stored ? new Date(stored) : new Date();
+        if (isNaN(purchaseDate.getTime())) purchaseDate = new Date();
 
-        // Fetch full order from API (source of truth) & trigger email if email param is present
+        try {
+          localStorage.setItem(key, purchaseDate.toISOString());
+          setCookie(key, purchaseDate.toISOString(), 365);
+        } catch(_) {}
+
+        if (onEl) onEl.textContent = urlOrderId;
+        preserveOrderInLinks(urlOrderId, purchaseDate.getTime());
+
+        // Fetch full order from API (source of truth)
         var searchParams = new URLSearchParams(window.location.search);
         var clientEmail = searchParams.get('email') || searchParams.get('customer_email') || '';
         var clientName = searchParams.get('name') || searchParams.get('customer_name') || '';
-        var apiUrl = '/api/order?order=' + encodeURIComponent(urlOrderId);
+        var apiUrl = '/api/order?order=' + encodeURIComponent(urlOrderId) + '&received_date=' + encodeURIComponent(purchaseDate.toISOString());
         if (clientEmail) {
           apiUrl += '&create=1&email=' + encodeURIComponent(clientEmail);
           if (clientName) apiUrl += '&name=' + encodeURIComponent(clientName);
@@ -609,20 +631,29 @@
           .then(function(order) {
             if (order.error) {
               if (onEl) onEl.textContent = urlOrderId;
-              _setFallbackDates(fmt, odEl, ddEl);
+              _setFallbackDates(fmt, odEl, ddEl, urlOrderId, purchaseDate);
               return;
             }
             if (onEl) onEl.textContent = order.order_id;
-            if (odEl) odEl.textContent = fmt(new Date(order.received_date));
-            if (ddEl) ddEl.textContent = fmt(new Date(order.delivery_date));
+            var finalPurchase = order.received_date ? new Date(order.received_date) : purchaseDate;
+            if (isNaN(finalPurchase.getTime())) finalPurchase = purchaseDate;
+            var finalDelivery = new Date(finalPurchase);
+            finalDelivery.setDate(finalDelivery.getDate() + 8);
+
+            if (odEl) odEl.textContent = fmt(finalPurchase);
+            if (ddEl) ddEl.textContent = fmt(finalDelivery);
             if (order.product_image) {
               var img = document.querySelector('.product-img');
               if (img) img.src = order.product_image;
             }
-            preserveOrderInLinks(order.order_id);
+            try {
+              localStorage.setItem(key, finalPurchase.toISOString());
+              setCookie(key, finalPurchase.toISOString(), 365);
+            } catch(_) {}
+            preserveOrderInLinks(order.order_id, finalPurchase.getTime());
           })
           .catch(function() {
-            _setFallbackDates(fmt, odEl, ddEl);
+            _setFallbackDates(fmt, odEl, ddEl, urlOrderId, purchaseDate);
           });
         return;
       }
@@ -632,20 +663,21 @@
       if (trackBtn) trackBtn.href = 'track.html';
       _setFallbackDates(fmt, odEl, ddEl);
 
-      function _setFallbackDates(fmt, odEl, ddEl) {
-        var stored = localStorage.getItem('takealot_purchase_date');
-        var purchaseDate;
-        if (stored) {
-          purchaseDate = new Date(stored);
-          if (isNaN(purchaseDate.getTime()) || purchaseDate > new Date()) {
-            purchaseDate = new Date();
-          }
-        } else {
-          purchaseDate = new Date();
+      function _setFallbackDates(fmt, odEl, ddEl, oid, explicitDate) {
+        var key = oid ? ('takealot_purchase_' + oid) : 'takealot_purchase_date';
+        var pDate = explicitDate;
+        if (!pDate) {
+          var stored = localStorage.getItem(key) || getCookie(key) || localStorage.getItem('takealot_purchase_date');
+          pDate = stored ? new Date(stored) : new Date();
+          if (isNaN(pDate.getTime())) pDate = new Date();
         }
-        var deliveryDate = new Date(purchaseDate);
-        deliveryDate.setDate(deliveryDate.getDate() + 7);
-        if (odEl) odEl.textContent = fmt(purchaseDate);
+        try {
+          localStorage.setItem(key, pDate.toISOString());
+          setCookie(key, pDate.toISOString(), 365);
+        } catch(_) {}
+        var deliveryDate = new Date(pDate);
+        deliveryDate.setDate(deliveryDate.getDate() + 8);
+        if (odEl) odEl.textContent = fmt(pDate);
         if (ddEl) ddEl.textContent = fmt(deliveryDate);
       }
     })();

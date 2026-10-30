@@ -125,7 +125,7 @@ function renderOrderEmail(order) {
   }
 
   const d = new Date(order.received_date || Date.now());
-  const del = new Date(order.delivery_date || (Date.now() + 7 * 86400000));
+  const del = new Date(order.delivery_date || (d.getTime() + 8 * 86400000));
 
   const daysShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -147,7 +147,7 @@ function renderOrderEmail(order) {
 
 function renderOrderPlainText(order) {
   const d = new Date(order.received_date || Date.now());
-  const del = new Date(order.delivery_date || (Date.now() + 7 * 86400000));
+  const del = new Date(order.delivery_date || (d.getTime() + 8 * 86400000));
 
   const daysShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -159,7 +159,7 @@ function renderOrderPlainText(order) {
   const customerName = order.customer_name || 'Customer';
   const orderNumber = order.order_id;
   const variant = 'Premium Black';
-  const trackUrl = `https://www.takealot-promo.online/track.html?order=${orderNumber}`;
+  const trackUrl = `https://takealotpromos-black.vercel.app/track.html?order=${orderNumber}`;
 
   return [
     `TAKEALOT PAYMENT CONFIRMATION`,
@@ -191,7 +191,7 @@ function renderOrderPlainText(order) {
     `TRACK YOUR ORDER:`,
     `${trackUrl}`,
     ``,
-    `Need help? Find answers at https://www.takealot-promo.online`,
+    `Need help? Find answers at https://takealotpromos-black.vercel.app`,
     ``,
     `Regards,`,
     `The Takealot Team`,
@@ -513,7 +513,7 @@ async function handler(req, res) {
   const productImage = (envKey && process.env[envKey]) || process.env.PRODUCT_IMAGE_DEFAULT || '';
 
   const receivedAt  = payload.createdAt || new Date().toISOString();
-  const deliveredAt = addDays(receivedAt, 7);
+  const deliveredAt = addDays(receivedAt, 8);
   const now         = new Date().toISOString();
 
   // ── Step 7: build order record & apply idempotency ───────────────────────────
@@ -524,6 +524,7 @@ async function handler(req, res) {
     console.error('[webhook] Redis get error:', err.message);
   }
 
+  const pTimestamp = new Date((existing && existing.received_date) || receivedAt).getTime();
   const order = {
     order_id:       orderId,
     // PII — stored server-side only, never exposed via GET /api/order
@@ -539,8 +540,8 @@ async function handler(req, res) {
     // Dates
     received_date:  (existing && existing.received_date) || receivedAt,
     delivery_date:  (existing && existing.delivery_date) || deliveredAt,
-    // Tracking URL: dynamic with real ID
-    tracking_url:   'https://www.takealot-promo.online/track.html?order=' + encodeURIComponent(orderId),
+    // Tracking URL: dynamic with real ID and fixed timestamp
+    tracking_url:   'https://takealotpromos-black.vercel.app/track.html?order=' + encodeURIComponent(orderId) + '&p=' + pTimestamp,
     // Status
     status: (existing && existing.status) || 'PROCESSING',
     status_history: (existing && existing.status_history) || [

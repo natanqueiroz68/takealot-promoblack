@@ -800,171 +800,170 @@
       return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
     }
 
+    function getCookie(name) {
+      var match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]+)'));
+      return match ? decodeURIComponent(match[1]) : null;
+    }
+    function setCookie(name, value, days) {
+      var d = new Date();
+      d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+      document.cookie = name + '=' + encodeURIComponent(value) + ';path=/;max-age=' + (days * 86400);
+    }
+
     function getOrderId() {
       const params = new URLSearchParams(window.location.search);
       return (params.get('order') || params.get('orderId') || params.get('id') || '').trim();
     }
 
+    function getUrlTimestamp() {
+      const params = new URLSearchParams(window.location.search);
+      var val = params.get('p') || params.get('received_date') || params.get('date');
+      if (val) {
+        var num = Number(val);
+        var d = !isNaN(num) && num > 1000000000 ? new Date(num > 10000000000 ? num : num * 1000) : new Date(val);
+        if (!isNaN(d.getTime())) return d;
+      }
+      return null;
+    }
+
     var _urlOrderId = getOrderId();
 
-    function preserveOrderInLinks(oid) {
+    function preserveOrderInLinks(oid, timestampMs) {
       if (!oid) return;
       var trackDetailsBtn = document.getElementById('trackDetailsBtn');
       if (trackDetailsBtn) {
-        trackDetailsBtn.href = 'tracking.html?order=' + encodeURIComponent(oid);
+        var u = 'tracking.html?order=' + encodeURIComponent(oid);
+        if (timestampMs) u += '&p=' + timestampMs;
+        trackDetailsBtn.href = u;
       }
       var links = document.querySelectorAll('a[href*="sucess.html"], a[href*="tracking.html"], a[href*="track.html"]');
       for (var i = 0; i < links.length; i++) {
         try {
-          var u = new URL(links[i].href, window.location.origin);
-          u.searchParams.set('order', oid);
-          links[i].href = u.pathname + u.search + u.hash;
+          var u2 = new URL(links[i].href, window.location.origin);
+          u2.searchParams.set('order', oid);
+          if (timestampMs) u2.searchParams.set('p', timestampMs);
+          links[i].href = u2.pathname + u2.search + u2.hash;
         } catch (e) { }
       }
     }
 
-    // ---- Status -> timeline mapping ----
-    function applyStatusToTimeline(status, deliveryDate) {
+    // ---- Status & Days Elapsed -> timeline mapping ----
+    function applyProgressToTimeline(status, deliveryDate, daysElapsed) {
       var packStep = document.getElementById('tlStepPacking');
       var delivStep = document.getElementById('tlStepOutDelivery');
+      var badge = document.querySelector('.status-badge');
+      var h2 = document.querySelector('.collection-title');
 
       if (status === 'CANCELLED') {
-        var badge = document.querySelector('.status-badge');
         if (badge) { badge.textContent = 'CANCELLED'; badge.style.background = '#dc2626'; badge.style.color = '#fff'; }
-        var h2 = document.querySelector('.collection-title');
         if (h2) h2.textContent = 'This order was cancelled';
         return;
       }
-      if ((status === 'IN_TRANSIT' || status === 'DELIVERED') && packStep) {
+
+      // Packing is complete after day 4 or if in transit/delivered
+      if ((daysElapsed >= 4 || status === 'IN_TRANSIT' || status === 'DELIVERED') && packStep) {
         packStep.classList.add('active');
         var dot = packStep.querySelector('.timeline-dot');
         if (dot) dot.textContent = '✓';
       }
-      if (status === 'DELIVERED' && delivStep) {
+
+      // Out for delivery / delivered
+      if ((daysElapsed >= 7 || status === 'DELIVERED') && delivStep) {
         delivStep.classList.add('active');
         var dot2 = delivStep.querySelector('.timeline-dot');
         if (dot2) dot2.textContent = '✓';
-        var badge2 = document.querySelector('.status-badge');
-        if (badge2) { badge2.textContent = 'DELIVERED'; badge2.style.background = '#16a34a'; badge2.style.color = '#fff'; }
-        var h2b = document.querySelector('.collection-title');
-        if (h2b) h2b.textContent = 'Delivered on ' + fmt(new Date(deliveryDate));
+      }
+
+      if (daysElapsed >= 8 || status === 'DELIVERED') {
+        if (badge) { badge.textContent = 'DELIVERED'; badge.style.background = '#16a34a'; badge.style.color = '#fff'; }
+        if (h2) h2.textContent = 'Delivered on ' + fmt(new Date(deliveryDate));
+      } else if (daysElapsed >= 4 || status === 'IN_TRANSIT') {
+        if (badge) { badge.textContent = 'IN TRANSIT'; badge.style.background = '#0c77c3'; badge.style.color = '#fff'; }
       }
     }
 
     (function initTrackPage() {
       try {
-        // ---- If URL has order ID: fetch from API (source of truth) ----
+        var urlTs = getUrlTimestamp();
+        var key = _urlOrderId ? ('takealot_purchase_' + _urlOrderId) : 'takealot_purchase_date';
+        var storedStr = urlTs ? urlTs.toISOString() : (localStorage.getItem(key) || getCookie(key) || localStorage.getItem('takealot_purchase_date'));
+        var purchaseDate = storedStr ? new Date(storedStr) : null;
+        if (purchaseDate && isNaN(purchaseDate.getTime())) purchaseDate = null;
+
         if (_urlOrderId) {
-          preserveOrderInLinks(_urlOrderId);
-          fetch('/api/order?order=' + encodeURIComponent(_urlOrderId))
+          preserveOrderInLinks(_urlOrderId, purchaseDate ? purchaseDate.getTime() : null);
+
+          var apiUrl = '/api/order?order=' + encodeURIComponent(_urlOrderId);
+          if (purchaseDate) {
+            apiUrl += '&received_date=' + encodeURIComponent(purchaseDate.toISOString());
+          }
+
+          fetch(apiUrl)
             .then(function (r) { return r.json(); })
             .then(function (order) {
               if (order.error) {
-                var h2 = document.querySelector('.collection-title');
-                if (h2) h2.textContent = 'Order #' + _urlOrderId;
-                var badge = document.querySelector('.status-badge');
-                if (badge) { badge.textContent = 'CONFIRMED'; badge.style.background = '#16a34a'; }
-                var today = new Date();
-                var delDate = new Date();
-                delDate.setDate(delDate.getDate() + 7);
-                var packD = new Date();
-                packD.setDate(packD.getDate() + 4);
-                var el;
-                el = document.getElementById('trackOrderedDate'); if (el) el.textContent = fmtShort(today);
-                el = document.getElementById('trackPaidDate'); if (el) el.textContent = fmtShort(today);
-                el = document.getElementById('trackDeliveryDate'); if (el) el.textContent = fmt(delDate);
-                el = document.getElementById('tlOrderPlaced'); if (el) el.textContent = fmt(today);
-                el = document.getElementById('tlPacking'); if (el) el.textContent = 'Expected ' + fmt(packD);
-                el = document.getElementById('tlOutDelivery'); if (el) el.textContent = 'Expected ' + fmt(delDate);
+                _renderWithPurchaseDate(purchaseDate || new Date(), 'CONFIRMED');
                 return;
               }
 
-              // ---- Product image from API ----
+              // Product image
               if (order.product_image) {
                 var imgEl = document.getElementById('trackProductImg');
                 if (imgEl) { imgEl.src = order.product_image; imgEl.onerror = null; }
               }
 
-              var receivedDate = new Date(order.received_date);
-              var deliveryDate = new Date(order.delivery_date);
-              var packDate = new Date(order.received_date);
-              packDate.setDate(packDate.getDate() + 4);
+              // Source of truth purchase date: preference to existing stored/URL or order.received_date
+              var finalPurchase = purchaseDate || (order.received_date ? new Date(order.received_date) : new Date());
+              if (isNaN(finalPurchase.getTime())) finalPurchase = new Date();
 
-              // ---- Fill header dates ----
-              var el;
-              el = document.getElementById('trackOrderedDate'); if (el) el.textContent = fmtShort(receivedDate);
-              el = document.getElementById('trackPaidDate'); if (el) el.textContent = fmtShort(receivedDate);
-              el = document.getElementById('trackDeliveryDate'); if (el) el.textContent = fmt(deliveryDate);
+              // Save to localStorage & cookie for permanent persistence
+              try {
+                localStorage.setItem(key, finalPurchase.toISOString());
+                setCookie(key, finalPurchase.toISOString(), 365);
+              } catch(_) {}
 
-              // ---- Fill timeline dates ----
-              el = document.getElementById('tlOrderPlaced'); if (el) el.textContent = fmt(receivedDate);
-              el = document.getElementById('tlPacking'); if (el) el.textContent = 'Expected ' + fmt(packDate);
-              el = document.getElementById('tlOutDelivery'); if (el) el.textContent = 'Expected ' + fmt(deliveryDate);
-
-              // ---- Update page title and order number ----
+              preserveOrderInLinks(order.order_id, finalPurchase.getTime());
               if (document.title) document.title = 'Order #' + order.order_id + ' | Takealot.com';
               var orderIdSpan = document.getElementById('trackOrderId');
               if (orderIdSpan) orderIdSpan.textContent = '#' + order.order_id;
-              preserveOrderInLinks(order.order_id);
 
-              // ---- Timeline from real status (not days elapsed) ----
-              applyStatusToTimeline(order.status, order.delivery_date);
+              _renderWithPurchaseDate(finalPurchase, order.status);
             })
             .catch(function (err) {
               console.error('[track] API error:', err);
-              // Fallback to localStorage if API unavailable
-              _legacyLocalStorageFallback();
+              _renderWithPurchaseDate(purchaseDate || new Date(), 'PROCESSING');
             });
-          return; // async path taken
+          return;
         }
 
-        // ---- No URL param: fall back to localStorage (legacy browsers / direct link) ----
-        _legacyLocalStorageFallback();
+        // Direct fallback
+        _renderWithPurchaseDate(purchaseDate || new Date(), 'PROCESSING');
 
       } catch (e) { console.error(e); }
-    })();
 
-    // Legacy path: localStorage + days-elapsed (kept for backward compatibility)
-    function _legacyLocalStorageFallback() {
-      try {
-        var imgEl = document.getElementById('trackProductImg');
-        if (imgEl) imgEl.src = 'images/hisense-wm.jpg';
-        var titleEl = document.getElementById('trackProductTitle');
-        if (titleEl) titleEl.textContent = 'Hisense 14kg Top Loader Washing Machine';
-
-        var stored = localStorage.getItem('takealot_purchase_date');
-        var purchaseDate = stored ? new Date(stored) : new Date();
-        if (isNaN(purchaseDate.getTime())) purchaseDate = new Date();
+      function _renderWithPurchaseDate(pDate, status) {
         var today = new Date(); today.setHours(0, 0, 0, 0);
-        var packDate = new Date(purchaseDate); packDate.setDate(packDate.getDate() + 4);
-        var deliveryDate = new Date(purchaseDate); deliveryDate.setDate(deliveryDate.getDate() + 7);
-        var purchaseMidnight = new Date(purchaseDate); purchaseMidnight.setHours(0, 0, 0, 0);
-        var daysElapsed = Math.floor((today - purchaseMidnight) / 86400000);
+        var pMidnight = new Date(pDate); pMidnight.setHours(0, 0, 0, 0);
+        var daysElapsed = Math.floor((today - pMidnight) / 86400000);
+        if (daysElapsed < 0) daysElapsed = 0;
+
+        // FIXED 8-day delivery window from purchase date
+        var deliveryDate = new Date(pDate);
+        deliveryDate.setDate(deliveryDate.getDate() + 8);
+        var packDate = new Date(pDate);
+        packDate.setDate(packDate.getDate() + 4);
+
         var el;
-        el = document.getElementById('trackOrderedDate'); if (el) el.textContent = fmtShort(purchaseDate);
-        el = document.getElementById('trackPaidDate'); if (el) el.textContent = fmtShort(purchaseDate);
+        el = document.getElementById('trackOrderedDate'); if (el) el.textContent = fmtShort(pDate);
+        el = document.getElementById('trackPaidDate'); if (el) el.textContent = fmtShort(pDate);
         el = document.getElementById('trackDeliveryDate'); if (el) el.textContent = fmt(deliveryDate);
-        el = document.getElementById('tlOrderPlaced'); if (el) el.textContent = fmt(purchaseDate);
+        el = document.getElementById('tlOrderPlaced'); if (el) el.textContent = fmt(pDate);
         el = document.getElementById('tlPacking'); if (el) el.textContent = 'Expected ' + fmt(packDate);
         el = document.getElementById('tlOutDelivery'); if (el) el.textContent = 'Expected ' + fmt(deliveryDate);
-        var packStep = document.getElementById('tlStepPacking');
-        var delivStep = document.getElementById('tlStepOutDelivery');
-        if (daysElapsed >= 4 && packStep) {
-          packStep.classList.add('active');
-          var dot = packStep.querySelector('.timeline-dot');
-          if (dot) dot.textContent = '✓';
-        }
-        if (daysElapsed >= 7 && delivStep) {
-          delivStep.classList.add('active');
-          var dot2 = delivStep.querySelector('.timeline-dot');
-          if (dot2) dot2.textContent = '✓';
-          var badge = document.querySelector('.status-badge');
-          if (badge) { badge.textContent = 'DELIVERED'; badge.style.background = '#16a34a'; badge.style.color = '#fff'; }
-          var h2 = document.querySelector('.collection-title');
-          if (h2) h2.textContent = 'Delivered on ' + fmt(deliveryDate);
-        }
-      } catch (e) { console.error(e); }
-    }
+
+        applyProgressToTimeline(status, deliveryDate, daysElapsed);
+      }
+    })();
   </script>
 
 </body>
