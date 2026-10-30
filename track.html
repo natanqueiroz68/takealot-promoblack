@@ -629,7 +629,18 @@
     <!-- ORDER HEADER STRIP (Fundo cinza claro idêntico ao print) -->
     <div class="order-title-strip">
       <div class="order-header-row">
-        <h1 class="order-number" id="trackOrderTitle">Order <span id="trackOrderId">—</span></h1>
+        <h1 class="order-number" id="trackOrderTitle">Order <span id="trackOrderId"></span></h1>
+        <script>
+          (function(){
+            try {
+              var p = new URLSearchParams(window.location.search);
+              var o = (p.get('order')||p.get('orderId')||p.get('id')||'').trim();
+              if(!o) o = localStorage.getItem('takealot_order_id') || localStorage.getItem('takealot_last_order_id') || '';
+              if(!o) { var m = document.cookie.match(/(?:^|;\s*)takealot_order_id=([^;]+)/); if(m) o = decodeURIComponent(m[1]); }
+              if(o) document.getElementById('trackOrderId').textContent = '#' + o;
+            } catch(e){}
+          })();
+        </script>
         <a href="index.html" class="view-all-link">View All Orders</a>
       </div>
       <div class="order-dates">

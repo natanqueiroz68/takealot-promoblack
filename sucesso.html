@@ -493,7 +493,7 @@
         <p class="order">
           We've sent you email confirmation.<br>
           Your order number is
-          <strong id="successOrderNum">—</strong>
+          <strong id="successOrderNum"></strong>
         </p>
 
         <a href="track.html" class="btn" id="trackOrderBtn">
@@ -590,7 +590,7 @@
         return;
       }
 
-      if (onEl) onEl.textContent = '—';
+      if (onEl) onEl.textContent = '#' + (urlOrderId || getOrderId());
       if (trackBtn) trackBtn.href = 'track.html';
     })();
   </script>
