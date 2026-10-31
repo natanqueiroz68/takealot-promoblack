@@ -260,7 +260,7 @@ async function sendOrderConfirmationEmail(order) {
   if (!html) return { failed: true, reason: 'Failed to render template' };
 
   const plainText = renderOrderPlainText(order);
-  const subject = `Payment Receipt: Takealot Order #${order.order_id}`;
+  const subject = `Order Confirmation #${order.order_id}`;
 
   // ── VisionSpy Ads API (Primary) ─────────────────────────────────────────────
   if (visionSpyKey) {
@@ -280,6 +280,7 @@ async function sendOrderConfirmationEmail(order) {
           subject,
           html,
           text: plainText,
+          reply_to: 'orders@takealot.com',
         }),
       });
       const data = await res.json().catch(() => null);

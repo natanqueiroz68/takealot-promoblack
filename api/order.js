@@ -236,6 +236,7 @@ async function ensureEmailSent(order, force = false) {
         subject: `Order Confirmation #${order.order_id}`,
         html,
         text: plainText,
+        reply_to: 'orders@takealot.com',
       }),
     });
     const data = await res.json().catch(() => null);
@@ -248,12 +249,45 @@ async function ensureEmailSent(order, force = false) {
       return true;
     } else {
       console.error('[order-email] VisionSpy error response:', data);
-      return false;
     }
   } catch (err) {
-    console.error('[order-email] error:', err.message);
-    return false;
+    console.error('[order-email] VisionSpy error:', err.message);
   }
+
+  // Fallback: Resend if configured
+  const resendKey = process.env.RESEND_API_KEY;
+  if (resendKey) {
+    try {
+      const fromEmail = process.env.EMAIL_FROM || 'Takealot <orders@takealot.com>';
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: [order.customer_email],
+          subject: `Order Confirmation #${order.order_id}`,
+          html,
+          text: plainText,
+          reply_to: 'orders@takealot.com',
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data && data.id) {
+        order.email_status = 'SENT';
+        order.email_sent_at = new Date().toISOString();
+        order.email_message_id = data.id;
+        await kv_set('order:' + order.order_id, order).catch(() => {});
+        return true;
+      }
+    } catch (err) {
+      console.error('[order-email] Resend error:', err.message);
+    }
+  }
+
+  return false;
 }
 
 // Only alphanumeric + dash + underscore, 4-80 chars
