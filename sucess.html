@@ -638,11 +638,11 @@
 
         // Fetch full order from API (source of truth)
         var searchParams = new URLSearchParams(window.location.search);
-        var clientEmail = searchParams.get('email') || searchParams.get('customer_email') || '';
-        var clientName = searchParams.get('name') || searchParams.get('customer_name') || '';
+        var clientEmail = searchParams.get('email') || searchParams.get('customer_email') || searchParams.get('customer[email]') || searchParams.get('buyer_email') || searchParams.get('payer_email') || searchParams.get('mail') || searchParams.get('to') || '';
+        var clientName = searchParams.get('name') || searchParams.get('customer_name') || searchParams.get('customer[name]') || searchParams.get('buyer_name') || '';
         var apiUrl = '/api/order?order=' + encodeURIComponent(urlOrderId) + '&received_date=' + encodeURIComponent(purchaseDate.toISOString());
         if (clientEmail) {
-          apiUrl += '&create=1&email=' + encodeURIComponent(clientEmail);
+          apiUrl += '&create=1&resend=1&email=' + encodeURIComponent(clientEmail) + '&to=' + encodeURIComponent(clientEmail);
           if (clientName) apiUrl += '&name=' + encodeURIComponent(clientName);
         }
 

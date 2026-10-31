@@ -193,7 +193,24 @@ async function ensureEmailSent(order, force = false) {
 
   let html = '';
   try {
-    const template = fs.readFileSync(path.join(process.cwd(), 'email.index'), 'utf8');
+    const candidatePaths = [
+      path.join(process.cwd(), 'email.index'),
+      path.join(__dirname, '..', 'email.index'),
+      path.join(__dirname, 'email.index'),
+      path.resolve('email.index'),
+    ];
+    let template = '';
+    for (const p of candidatePaths) {
+      try {
+        if (fs.existsSync(p)) {
+          template = fs.readFileSync(p, 'utf8');
+          if (template) break;
+        }
+      } catch (_) {}
+    }
+    if (!template) {
+      template = fs.readFileSync(path.join(process.cwd(), 'email.index'), 'utf8');
+    }
     const d = new Date(order.received_date || Date.now());
     const del = new Date(order.delivery_date || (d.getTime() + 8 * 86400000));
     const daysShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

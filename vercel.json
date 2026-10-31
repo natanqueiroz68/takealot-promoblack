@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/*.js": {
+      "includeFiles": "email.index"
+    }
+  },
   "rewrites": [
     { "source": "/success", "destination": "/sucess.html" },
     { "source": "/success.html", "destination": "/sucess.html" },
