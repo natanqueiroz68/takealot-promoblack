@@ -108,10 +108,44 @@ async function kv_set(key, value) {
 }
 
 // ── Date helper ────────────────────────────────────────────────────────────────
+const TIMEZONE = 'Africa/Johannesburg';
+
+function formatOrderDateShort(dateVal) {
+  const d = typeof dateVal === 'string' || typeof dateVal === 'number' ? new Date(dateVal) : dateVal;
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIMEZONE,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(d);
+}
+
+function formatDeliveryDateLong(dateVal) {
+  const d = typeof dateVal === 'string' || typeof dateVal === 'number' ? new Date(dateVal) : dateVal;
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIMEZONE,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(d);
+}
+
+function formatDeliveryDateShort(dateVal) {
+  const d = typeof dateVal === 'string' || typeof dateVal === 'number' ? new Date(dateVal) : dateVal;
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIMEZONE,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(d);
+}
+
 function addDays(isoDate, days) {
   const d = new Date(isoDate);
-  d.setDate(d.getDate() + days);
-  return d.toISOString();
+  return new Date(d.getTime() + days * 86400000).toISOString();
 }
 
 // ── Email template renderer & sender ───────────────────────────────────────────
@@ -143,14 +177,9 @@ function renderOrderEmail(order) {
   const d = new Date(order.received_date || Date.now());
   const del = new Date(order.delivery_date || (d.getTime() + 8 * 86400000));
 
-  const daysShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const daysLong = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const monthsLong = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-  const orderDateShort = `${daysShort[d.getDay()]}, ${d.getDate()} ${monthsShort[d.getMonth()]} ${d.getFullYear()}`;
+  const orderDateShort = formatOrderDateShort(d);
   const deliveryDateIso = del.toISOString().slice(0, 10);
-  const deliveryDateLong = `${daysLong[del.getDay()]}, ${del.getDate()} ${monthsLong[del.getMonth()]} ${del.getFullYear()}`;
+  const deliveryDateLong = formatDeliveryDateLong(del);
 
   return template
     .replace(/\{\{customer_name\}\}/g, order.customer_name || 'Customer')
@@ -165,17 +194,12 @@ function renderOrderPlainText(order) {
   const d = new Date(order.received_date || Date.now());
   const del = new Date(order.delivery_date || (d.getTime() + 8 * 86400000));
 
-  const daysShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const daysLong = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const monthsLong = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-  const orderDateShort = `${daysShort[d.getDay()]}, ${d.getDate()} ${monthsShort[d.getMonth()]} ${d.getFullYear()}`;
-  const deliveryDateLong = `${daysLong[del.getDay()]}, ${del.getDate()} ${monthsLong[del.getMonth()]} ${del.getFullYear()}`;
+  const orderDateShort = formatOrderDateShort(d);
+  const deliveryDateLong = formatDeliveryDateLong(del);
   const customerName = order.customer_name || 'Customer';
   const orderNumber = order.order_id;
   const variant = 'Premium Black';
-  const trackUrl = `https://takealotpromos-black.vercel.app/track.html?order=${orderNumber}`;
+  const trackUrl = `https://takealotpromos-black.vercel.app/track.html?order=${orderNumber}&p=${d.getTime()}`;
 
   return [
     `TAKEALOT PAYMENT CONFIRMATION`,
@@ -525,7 +549,9 @@ async function handler(req, res) {
                     : '';
   const productImage = (envKey && process.env[envKey]) || process.env.PRODUCT_IMAGE_DEFAULT || '';
 
-  const receivedAt  = payload.createdAt || new Date().toISOString();
+  const receivedAt  = (payload.createdAt && !isNaN(new Date(payload.createdAt).getTime()))
+                    ? new Date(payload.createdAt).toISOString()
+                    : new Date().toISOString();
   const deliveredAt = addDays(receivedAt, 8);
   const now         = new Date().toISOString();
 
@@ -552,9 +578,9 @@ async function handler(req, res) {
     product_price:  productPrice,
     currency,
     product_image:  productImage,
-    // Dates
+    // Dates: strictly immutable once created, delivery strictly 8 calendar days
     received_date:  (existing && existing.received_date) || receivedAt,
-    delivery_date:  (existing && existing.delivery_date) || deliveredAt,
+    delivery_date:  (existing && existing.delivery_date) || (existing && existing.received_date ? addDays(existing.received_date, 8) : deliveredAt),
     // Tracking URL: dynamic with real ID and fixed timestamp
     tracking_url:   'https://takealotpromos-black.vercel.app/track.html?order=' + encodeURIComponent(orderId) + '&p=' + pTimestamp,
     // Status

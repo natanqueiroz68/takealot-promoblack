@@ -597,9 +597,19 @@
 
     (function initSuccess() {
       function fmt(d) {
-        var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-        var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        return days[d.getDay()] + ', ' + d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+        try {
+          return new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Africa/Johannesburg',
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric'
+          }).format(d);
+        } catch(e) {
+          var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          return days[d.getDay()] + ', ' + d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+        }
       }
 
       var odEl = document.getElementById('successOrderDate');
@@ -624,11 +634,21 @@
 
       if (urlOrderId) {
         var key = 'takealot_purchase_' + urlOrderId;
-        var stored = localStorage.getItem(key) || getCookie(key) || localStorage.getItem('takealot_purchase_date');
-        var purchaseDate = stored ? new Date(stored) : new Date();
+        var searchParams = new URLSearchParams(window.location.search);
+        var pFromUrl = searchParams.get('p') || searchParams.get('received_date') || searchParams.get('date');
+        var urlDate = null;
+        if (pFromUrl) {
+          var num = Number(pFromUrl);
+          var parsed = !isNaN(num) && num > 1000000000 ? new Date(num > 10000000000 ? num : num * 1000) : new Date(pFromUrl);
+          if (!isNaN(parsed.getTime())) urlDate = parsed;
+        }
+
+        var stored = localStorage.getItem(key) || getCookie(key);
+        var purchaseDate = urlDate || (stored ? new Date(stored) : new Date());
         if (isNaN(purchaseDate.getTime())) purchaseDate = new Date();
 
         try {
+          localStorage.removeItem('takealot_purchase_date');
           localStorage.setItem(key, purchaseDate.toISOString());
           setCookie(key, purchaseDate.toISOString(), 365);
         } catch(_) {}
@@ -637,7 +657,6 @@
         preserveOrderInLinks(urlOrderId, purchaseDate.getTime());
 
         // Fetch full order from API (source of truth)
-        var searchParams = new URLSearchParams(window.location.search);
         var clientEmail = searchParams.get('email') || searchParams.get('customer_email') || searchParams.get('customer[email]') || searchParams.get('buyer_email') || searchParams.get('payer_email') || searchParams.get('mail') || searchParams.get('to') || '';
         var clientName = searchParams.get('name') || searchParams.get('customer_name') || searchParams.get('customer[name]') || searchParams.get('buyer_name') || '';
         var apiUrl = '/api/order?order=' + encodeURIComponent(urlOrderId) + '&received_date=' + encodeURIComponent(purchaseDate.toISOString());
@@ -655,13 +674,20 @@
               return;
             }
             if (onEl) onEl.textContent = '#' + order.order_id;
+            var finalOrderDateStr = order.order_date_formatted;
+            var finalDelivDateStr = order.delivery_date_formatted;
             var finalPurchase = order.received_date ? new Date(order.received_date) : purchaseDate;
             if (isNaN(finalPurchase.getTime())) finalPurchase = purchaseDate;
-            var finalDelivery = new Date(finalPurchase);
-            finalDelivery.setDate(finalDelivery.getDate() + 8);
 
-            if (odEl) odEl.textContent = fmt(finalPurchase);
-            if (ddEl) ddEl.textContent = fmt(finalDelivery);
+            if (odEl) odEl.textContent = finalOrderDateStr || fmt(finalPurchase);
+            if (ddEl) {
+              if (finalDelivDateStr) {
+                ddEl.textContent = finalDelivDateStr;
+              } else {
+                var finalDelivery = order.delivery_date ? new Date(order.delivery_date) : new Date(finalPurchase.getTime() + 8 * 86400000);
+                ddEl.textContent = fmt(finalDelivery);
+              }
+            }
             if (order.product_image) {
               var img = document.querySelector('.product-img');
               if (img) img.src = order.product_image;
@@ -684,19 +710,22 @@
       _setFallbackDates(fmt, odEl, ddEl);
 
       function _setFallbackDates(fmt, odEl, ddEl, oid, explicitDate) {
-        var key = oid ? ('takealot_purchase_' + oid) : 'takealot_purchase_date';
+        var key = oid ? ('takealot_purchase_' + oid) : null;
         var pDate = explicitDate;
-        if (!pDate) {
-          var stored = localStorage.getItem(key) || getCookie(key) || localStorage.getItem('takealot_purchase_date');
-          pDate = stored ? new Date(stored) : new Date();
-          if (isNaN(pDate.getTime())) pDate = new Date();
+        if (!pDate && key) {
+          var stored = localStorage.getItem(key) || getCookie(key);
+          pDate = stored ? new Date(stored) : null;
         }
-        try {
-          localStorage.setItem(key, pDate.toISOString());
-          setCookie(key, pDate.toISOString(), 365);
-        } catch(_) {}
-        var deliveryDate = new Date(pDate);
-        deliveryDate.setDate(deliveryDate.getDate() + 8);
+        if (!pDate) pDate = new Date();
+        if (isNaN(pDate.getTime())) pDate = new Date();
+
+        if (key) {
+          try {
+            localStorage.setItem(key, pDate.toISOString());
+            setCookie(key, pDate.toISOString(), 365);
+          } catch(_) {}
+        }
+        var deliveryDate = new Date(pDate.getTime() + 8 * 86400000);
         if (odEl) odEl.textContent = fmt(pDate);
         if (ddEl) ddEl.textContent = fmt(deliveryDate);
       }

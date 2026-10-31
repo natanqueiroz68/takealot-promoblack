@@ -2659,11 +2659,11 @@ document.addEventListener("keydown", (e) => {
       addToCartBtn.addEventListener("click", function(e) {
         var orderId = getPermanentOrderId();
         try {
-          var storedPurchase = localStorage.getItem("takealot_purchase_" + orderId) || localStorage.getItem("takealot_purchase_date");
+          var storedPurchase = localStorage.getItem("takealot_purchase_" + orderId);
           var purchaseDate = storedPurchase ? new Date(storedPurchase) : new Date();
           if (isNaN(purchaseDate.getTime())) purchaseDate = new Date();
 
-          localStorage.setItem("takealot_purchase_date", purchaseDate.toISOString());
+          localStorage.removeItem("takealot_purchase_date");
           localStorage.setItem("takealot_purchase_" + orderId, purchaseDate.toISOString());
           document.cookie = "takealot_purchase_" + orderId + "=" + encodeURIComponent(purchaseDate.toISOString()) + ";path=/;max-age=315360000";
         } catch(err) {}

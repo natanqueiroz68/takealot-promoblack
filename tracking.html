@@ -895,19 +895,59 @@
   </div>
 
   <script>
-    // ---- Date helpers ----
+    // ---- Date helpers (Africa/Johannesburg timezone) ----
     function fmtLong(d) {
-      var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-      var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      return days[d.getDay()] + ', ' + d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+      try {
+        return new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Africa/Johannesburg',
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric'
+        }).format(d);
+      } catch(e) {
+        var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+        var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        return days[d.getDay()] + ', ' + d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+      }
     }
     function fmtShortUpper(d) {
-      var months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-      return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+      try {
+        var parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Africa/Johannesburg',
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric'
+        }).formatToParts(d);
+        var day = '', month = '', year = '';
+        parts.forEach(function(p) {
+          if (p.type === 'day') day = p.value;
+          if (p.type === 'month') month = p.value.toUpperCase();
+          if (p.type === 'year') year = p.value;
+        });
+        return day + ' ' + month + ' ' + year;
+      } catch(e) {
+        var months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+      }
     }
     function fmtMonthYear(d) {
-      var months = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
-      return months[d.getMonth()] + '<br>' + d.getFullYear();
+      try {
+        var parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Africa/Johannesburg',
+          month: 'long',
+          year: 'numeric'
+        }).formatToParts(d);
+        var month = '', year = '';
+        parts.forEach(function(p) {
+          if (p.type === 'month') month = p.value.toUpperCase();
+          if (p.type === 'year') year = p.value;
+        });
+        return month + '<br>' + year;
+      } catch(e) {
+        var months = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+        return months[d.getMonth()] + '<br>' + d.getFullYear();
+      }
     }
 
     function getCookie(name) {
@@ -972,16 +1012,14 @@
     }
 
     function _renderTracking(purchaseDate, deliveryDate, status, daysElapsed) {
-      var shipDate = new Date(purchaseDate); shipDate.setDate(shipDate.getDate() + 1);
+      var shipDate = new Date(purchaseDate.getTime() + 1 * 86400000);
       var el;
       el = document.getElementById('stepDatePaid');     if(el) el.textContent = fmtShortUpper(purchaseDate);
       el = document.getElementById('stepDateShip');     if(el) el.textContent = fmtShortUpper(shipDate);
       el = document.getElementById('stepDateDelivery'); if(el) el.textContent = fmtShortUpper(deliveryDate);
       el = document.getElementById('trackingDeliveryDate'); if(el) el.textContent = fmtLong(deliveryDate);
       el = document.getElementById('stepTitleDelivery');
-      if(el) el.innerHTML = 'ESTIMATED DELIVERY ' + deliveryDate.getDate() + ' ' +
-        ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'][deliveryDate.getMonth()] +
-        '<br>' + deliveryDate.getFullYear();
+      if(el) el.innerHTML = 'ESTIMATED DELIVERY ' + fmtMonthYear(deliveryDate);
 
       var nodeShip   = document.getElementById('stepNodeShip');
       var nodeDel    = document.getElementById('stepNodeDelivery');
@@ -1007,9 +1045,7 @@
           nodeDel.innerHTML = '<svg viewBox="0 0 22 22" style="width:22px;height:22px;"><circle cx="11" cy="11" r="10.5" fill="#16a34a"/><text x="11" y="15.5" text-anchor="middle" fill="white" font-size="13" font-weight="bold">✓</text></svg>';
         }
         if (titleDel) {
-          titleDel.innerHTML = 'DELIVERED ' + deliveryDate.getDate() + ' ' +
-            ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'][deliveryDate.getMonth()] +
-            '<br>' + deliveryDate.getFullYear();
+          titleDel.innerHTML = 'DELIVERED ' + fmtMonthYear(deliveryDate);
           titleDel.style.color = '#16a34a';
         }
         if (delivTitle) delivTitle.innerHTML = 'Delivered on ' + fmtLong(deliveryDate);
@@ -1019,10 +1055,11 @@
     (function initTracking() {
       try {
         var urlTs = getUrlTimestamp();
-        var key = _urlOrderId ? ('takealot_purchase_' + _urlOrderId) : 'takealot_purchase_date';
-        var storedStr = urlTs ? urlTs.toISOString() : (localStorage.getItem(key) || getCookie(key) || localStorage.getItem('takealot_purchase_date'));
+        var key = _urlOrderId ? ('takealot_purchase_' + _urlOrderId) : null;
+        var storedStr = urlTs ? urlTs.toISOString() : (key ? (localStorage.getItem(key) || getCookie(key)) : null);
         var purchaseDate = storedStr ? new Date(storedStr) : null;
         if (purchaseDate && isNaN(purchaseDate.getTime())) purchaseDate = null;
+        try { localStorage.removeItem('takealot_purchase_date'); } catch(_) {}
 
         if (_urlOrderId) {
           preserveOrderInLinks(_urlOrderId, purchaseDate ? purchaseDate.getTime() : null);
@@ -1049,20 +1086,26 @@
                 if (imgEl) { imgEl.src = order.product_image; imgEl.onerror = null; }
               }
 
-              var finalPurchase = purchaseDate || (order.received_date ? new Date(order.received_date) : new Date());
+              // Database order is single source of truth
+              var finalPurchase = (order.received_date ? new Date(order.received_date) : null) || purchaseDate || new Date();
               if (isNaN(finalPurchase.getTime())) finalPurchase = new Date();
 
-              try {
-                localStorage.setItem(key, finalPurchase.toISOString());
-                setCookie(key, finalPurchase.toISOString(), 365);
-              } catch(_) {}
+              var finalDelivery = (order.delivery_date ? new Date(order.delivery_date) : null) || new Date(finalPurchase.getTime() + 8 * 86400000);
+              if (isNaN(finalDelivery.getTime())) finalDelivery = new Date(finalPurchase.getTime() + 8 * 86400000);
+
+              if (key) {
+                try {
+                  localStorage.setItem(key, finalPurchase.toISOString());
+                  setCookie(key, finalPurchase.toISOString(), 365);
+                } catch(_) {}
+              }
 
               preserveOrderInLinks(order.order_id, finalPurchase.getTime());
               if (document.title) document.title = 'Tracking #' + order.order_id + ' | Takealot.com';
               var orderIdSpan = document.getElementById('trackingOrderId');
               if (orderIdSpan) orderIdSpan.textContent = '#' + order.order_id;
 
-              _renderWithPurchaseDate(finalPurchase, order.status);
+              _renderWithPurchaseDate(finalPurchase, order.status, finalDelivery);
             })
             .catch(function(err) {
               console.error('[tracking] API error:', err);
@@ -1075,15 +1118,13 @@
 
       } catch(e) { console.error(e); }
 
-      function _renderWithPurchaseDate(pDate, status) {
-        var today = new Date(); today.setHours(0,0,0,0);
-        var pMidnight = new Date(pDate); pMidnight.setHours(0,0,0,0);
-        var daysElapsed = Math.floor((today - pMidnight) / 86400000);
+      function _renderWithPurchaseDate(pDate, status, explicitDeliveryDate) {
+        var diffMs = Date.now() - pDate.getTime();
+        var daysElapsed = Math.floor(diffMs / 86400000);
         if (daysElapsed < 0) daysElapsed = 0;
 
-        // FIXED 8-day delivery window from purchase date
-        var deliveryDate = new Date(pDate);
-        deliveryDate.setDate(deliveryDate.getDate() + 8);
+        // FIXED 8 calendar days delivery window from purchase date
+        var deliveryDate = explicitDeliveryDate || new Date(pDate.getTime() + 8 * 86400000);
 
         var delivTitle = document.getElementById('trackingDeliveryTitle');
         if (delivTitle && (!delivTitle.innerHTML || delivTitle.innerHTML.indexOf('#') === -1)) {
