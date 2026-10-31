@@ -293,15 +293,6 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
 
-  if (req.query.diag === '1') {
-    return res.status(200).json({
-      has_redis_url: Boolean(REDIS_URL),
-      has_redis_token: Boolean(REDIS_TOKEN),
-      redis_url_prefix: REDIS_URL ? REDIS_URL.slice(0, 15) : null,
-      available_env_keys: Object.keys(process.env).filter(k => !k.includes('KEY') && !k.includes('SECRET') && !k.includes('TOKEN'))
-    });
-  }
-
   if (req.query.list === '1') {
     try {
       const resKeys = await fetch(REDIS_URL, {
