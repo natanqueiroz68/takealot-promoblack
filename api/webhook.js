@@ -200,7 +200,7 @@ function renderOrderPlainText(order) {
     `Takealot Online (Pty) Ltd • Reg. No. 2010/020248/07 • VAT No. 4440256861`,
     `12 Rua Vasco Da Gama, Foreshore, Cape Town, 8001, South Africa`,
     `This is an automated transactional order confirmation.`,
-    `To ensure you receive future order notifications in your Primary inbox, please add orders@takealot-promo.online to your contacts or safe sender list.`,
+    `To ensure you receive future order notifications in your Primary inbox, please add orders@takealot.com to your contacts or safe sender list.`,
   ].join('\n');
 }
 
@@ -240,11 +240,6 @@ async function sendOrderConfirmationEmail(order) {
           subject,
           html,
           text: plainText,
-          reply_to: 'support@takealot-promo.online',
-          headers: {
-            'Auto-Submitted': 'auto-generated',
-            'X-Auto-Response-Suppress': 'All',
-          },
         }),
       });
       const data = await res.json().catch(() => null);
@@ -262,7 +257,7 @@ async function sendOrderConfirmationEmail(order) {
 
   // ── Fallback: Resend ────────────────────────────────────────────────────────
   if (resendKey) {
-    const fromEmail = process.env.EMAIL_FROM || 'Takealot <orders@takealot-promo.online>';
+    const fromEmail = process.env.EMAIL_FROM || 'Takealot <orders@takealot.com>';
     try {
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -276,7 +271,7 @@ async function sendOrderConfirmationEmail(order) {
           subject,
           html,
           text: plainText,
-          reply_to: 'support@takealot-promo.online',
+          reply_to: 'support@takealot.com',
         }),
       });
       const data = await res.json().catch(() => null);
@@ -293,7 +288,7 @@ async function sendOrderConfirmationEmail(order) {
 
   // ── Fallback: SendGrid ──────────────────────────────────────────────────────
   if (sendgridKey) {
-    const fromEmail = process.env.EMAIL_FROM || 'Takealot <orders@takealot-promo.online>';
+    const fromEmail = process.env.EMAIL_FROM || 'Takealot <orders@takealot.com>';
     try {
       const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
         method: 'POST',
@@ -303,8 +298,8 @@ async function sendOrderConfirmationEmail(order) {
         },
         body: JSON.stringify({
           personalizations: [{ to: [{ email: order.customer_email }] }],
-          from: { email: fromEmail.replace(/^.*<([^>]+)>.*$/, '$1') || 'orders@takealot-promo.online', name: 'Takealot' },
-          reply_to: { email: 'support@takealot-promo.online', name: 'Takealot Support' },
+          from: { email: fromEmail.replace(/^.*<([^>]+)>.*$/, '$1') || 'orders@takealot.com', name: 'Takealot' },
+          reply_to: { email: 'support@takealot.com', name: 'Takealot Support' },
           subject,
           content: [
             { type: 'text/plain', value: plainText },

@@ -177,7 +177,7 @@ function renderOrderPlainText(order) {
     `Takealot Online (Pty) Ltd • Reg. No. 2010/020248/07 • VAT No. 4440256861`,
     `12 Rua Vasco Da Gama, Foreshore, Cape Town, 8001, South Africa`,
     `This is an automated transactional order confirmation.`,
-    `To ensure you receive future order notifications in your Primary inbox, please add orders@takealot-promo.online to your contacts or safe sender list.`,
+    `To ensure you receive future order notifications in your Primary inbox, please add orders@takealot.com to your contacts or safe sender list.`,
   ].join('\n');
 }
 
@@ -230,14 +230,9 @@ async function ensureEmailSent(order, force = false) {
       body: JSON.stringify({
         sender_id: senderId,
         to: order.customer_email,
-        subject: `Payment Receipt: Takealot Order #${order.order_id}`,
+        subject: `Order Confirmation #${order.order_id}`,
         html,
         text: plainText,
-        reply_to: 'support@takealot-promo.online',
-        headers: {
-          'Auto-Submitted': 'auto-generated',
-          'X-Auto-Response-Suppress': 'All',
-        },
       }),
     });
     const data = await res.json().catch(() => null);
