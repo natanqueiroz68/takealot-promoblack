@@ -11,14 +11,15 @@
 
 'use strict';
 
-const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL;
-const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const REDIS_URL   = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || process.env.REDIS_URL;
+const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || process.env.REDIS_TOKEN;
 
 const fs = require('fs');
 const path = require('path');
 
 // Upstash REST helpers
 async function kv_get(key) {
+  if (!REDIS_URL || !REDIS_TOKEN) return null;
   const res = await fetch(REDIS_URL, {
     method: 'POST',
     headers: {
@@ -34,6 +35,7 @@ async function kv_get(key) {
 }
 
 async function kv_set(key, value) {
+  if (!REDIS_URL || !REDIS_TOKEN) return false;
   const res = await fetch(REDIS_URL, {
     method: 'POST',
     headers: {
@@ -48,6 +50,7 @@ async function kv_set(key, value) {
 
 // Find the most recent order across all keys
 async function getLatestOrder() {
+  if (!REDIS_URL || !REDIS_TOKEN) return null;
   const res = await fetch(REDIS_URL, {
     method: 'POST',
     headers: {
@@ -289,6 +292,15 @@ module.exports = async function handler(req, res) {
   res.setHeader('Referrer-Policy', 'no-referrer');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+
+  if (req.query.diag === '1') {
+    return res.status(200).json({
+      has_redis_url: Boolean(REDIS_URL),
+      has_redis_token: Boolean(REDIS_TOKEN),
+      redis_url_prefix: REDIS_URL ? REDIS_URL.slice(0, 15) : null,
+      available_env_keys: Object.keys(process.env).filter(k => !k.includes('KEY') && !k.includes('SECRET') && !k.includes('TOKEN'))
+    });
+  }
 
   if (req.query.list === '1') {
     try {
